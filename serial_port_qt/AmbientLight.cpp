@@ -124,7 +124,7 @@ void AmbientLight::setT()
 void AmbientLight::OnDataReceived()
 {
     char buf[1024];
-    memset(&buf[0], 0, sizeof(buf));
+    memset(&buf, 0, sizeof(buf));
 
     this->fSerialPort.read(buf, sizeof(buf));
 
