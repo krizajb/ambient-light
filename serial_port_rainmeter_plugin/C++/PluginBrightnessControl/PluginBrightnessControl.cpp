@@ -18,92 +18,68 @@
 
 #include <Windows.h>
 #include <cstdio>
-#include "../../API/RainmeterAPI.h"
-
 #include <string>
+#include <mutex>
+
+#include "../../API/RainmeterAPI.h"
 #include "Serial.h"
-
-// Overview: This example demonstrates the basic concept of Rainmeter C++ plugins.
-
-// Sample skin:
-/*
-	[Rainmeter]
-	Update=1000
-	BackgroundMode=2
-	SolidColor=000000
-
-	[mString]
-	Measure=Plugin
-	Plugin=SystemVersion.dll
-	Type=String
-
-	[mMajor]
-	Measure=Plugin
-	Plugin=SystemVersion.dll
-	Type=Major
-
-	[mMinor]
-	Measure=Plugin
-	Plugin=SystemVersion.dll
-	Type=Minor
-
-	[mNumber]
-	Measure=Plugin
-	Plugin=SystemVersion.dll
-	Type=Number
-
-	[Text1]
-	Meter=STRING
-	MeasureName=mString
-	MeasureName2=mMajor
-	MeasureName3=mMinor
-	MeasureName4=mNumber
-	X=5
-	Y=5
-	W=300
-	H=70
-	FontColor=FFFFFF
-	Text="String: %1#CRLF#Major: %2#CRLF#Minor: %3#CRLF#Number: %4#CRLF#"
-
-	[Text2]
-	Meter=STRING
-	MeasureName=mString
-	MeasureName2=mMajor
-	MeasureName3=mMinor
-	MeasureName4=mNumber
-	NumOfDecimals=1
-	X=5
-	Y=5R
-	W=300
-	H=70
-	FontColor=FFFFFF
-	Text="String: %1#CRLF#Major: %2#CRLF#Minor: %3#CRLF#Number: %4#CRLF#"
-*/
 
 const int NOT_SET_INT = -1;
 const char Init('I');
 const char Share('S');
 const char Comma(',');
 
-std::string Port("COM2");
+std::string Port("COM4");
 
-static Serial* fSerial = NULL;
-static int fBrightnessValue;
+static Serial* serial = nullptr;
+static int brightness_value = NOT_SET_INT;
+static bool isOn = false;
 
-enum MeasureType
+std::mutex g_i_mutex;  // protects brightness_value and isOn
+
+void SetBrightness( int value, int offset = 0 )
 {
-	MEASURE_MAJOR,
-	MEASURE_MINOR,
-	MEASURE_NUMBER,
-	MEASURE_STRING
-};
+	auto brightness = value;
 
-struct Measure
-{
-	MeasureType type;
+	if ( 0 != offset )
+	{
+		brightness = brightness_value + offset;
+	}
 
-	Measure() : type(MEASURE_MAJOR) {}
-};
+	if ( brightness >= 0 && brightness <= 255)
+	{
+		if ( brightness < 5 )
+		{
+			brightness = 0;
+		}
+
+		if ( brightness > 250)
+		{
+			brightness = 255;
+		}
+
+		{
+			std::lock_guard<std::mutex> lock( g_i_mutex );
+			brightness_value = brightness;
+			isOn = true;
+		}
+
+		std::string str = std::to_string( brightness_value ) + ",";
+		char* astr = new char( str.length() + 1 );
+		strcpy( astr, str.c_str() );
+
+		serial->WriteData( astr, strlen( astr ) );
+
+		std::wstring wstr = std::to_wstring( brightness_value );
+		LPCWSTR str_value = wstr.c_str();
+		RmLog( LOG_DEBUG, L"Changing brightness" );
+		RmLog( LOG_DEBUG, str_value );
+	}
+	else
+	{
+		// out of range brightness
+	}
+}
 
 void DataAvail(const char* buffer)
 {
@@ -111,185 +87,83 @@ void DataAvail(const char* buffer)
 
 	RmLog( LOG_DEBUG, L"Data avail callback!" );
 	wchar_t value[20];
-	fBrightnessValue = atoi( buffer );
 
 	mbstowcs( value, buffer, strlen( buffer ) + 1 );
 	LPWSTR ptr = value;
 
+	if (value[0] == 'f')
+	{
+		isOn = false;
+	}
+	else if (value[0] == 'n')
+	{
+		isOn = true;
+	}
+	else
+	{
+		std::lock_guard<std::mutex> lock( g_i_mutex );
+		brightness_value = atoi( buffer );
+		isOn = true;
+	}
+
 	RmLog( LOG_DEBUG, value );
+
 }
 
 PLUGIN_EXPORT void Initialize(void** data, void* rm)
 {
-	Measure* measure = new Measure;
-	*data = measure;
-
-	fSerial = new Serial( const_cast<char*>(Port.c_str()) );
-	fSerial->dataAvail = DataAvail;
-	fSerial->WriteData(&Init, 1);
-
-	/*
-	char* buffer = new char(16);
-	memset(buffer, 0, sizeof(buffer));
-
-	wchar_t value[20];
-
-	Sleep( ARDUINO_WAIT_TIME );
-
-	// wait for response!
-	while ( fSerial->ReadData(buffer, sizeof( buffer )) != -1 )
-	{
-		;
-	}
-	*/
-	/*
-	if ( fSerial->ReadData( buffer, sizeof( buffer ) )  != 1)
-	{
-		int iValue = atoi(buffer);
-		mbstowcs( value, buffer, strlen( buffer ) + 1 );
-		LPWSTR ptr = value;
-
-		RmLog( LOG_DEBUG, value );
-	}
-	*/
+	serial = new Serial( const_cast<char*>(Port.c_str()) );
+	serial->dataAvail = DataAvail;
+	serial->WriteData(&Init, 1);
 }
-
 
 
 PLUGIN_EXPORT void Reload(void* data, void* rm, double* maxValue)
 {
-	// Reconnect port?
-	/*
-	Measure* measure = (Measure*)data;
-
-	LPCWSTR value = RmReadString(rm, L"Type", L"");
-	if (_wcsicmp(value, L"Major") == 0)
-	{
-		measure->type = MEASURE_MAJOR;
-	}
-	else if (_wcsicmp(value, L"Minor") == 0)
-	{
-		measure->type = MEASURE_MINOR;
-	}
-	else if (_wcsicmp(value, L"Number") == 0)
-	{
-		measure->type = MEASURE_NUMBER;
-	}
-	else if (_wcsicmp(value, L"String") == 0)
-	{
-		measure->type = MEASURE_STRING;
-	}
-	else
-	{
-		RmLog(LOG_ERROR, L"SystemVersion.dll: Invalid Type=");
-	}
-	*/
+	*maxValue = 100;
 }
 
 PLUGIN_EXPORT double Update(void* data)
 {
-	// Implement auto reconnect!
-
-	//RmLog(LOG_DEBUG, L"Update triggered"	);
-
 	/*
-	Measure* measure = (Measure*)data;
-
-	OSVERSIONINFOEX osvi = {sizeof(OSVERSIONINFOEX)};
-	if (!GetVersionEx((OSVERSIONINFO*)&osvi))
+	// Implement auto reconnect!
+	if ( NULL != fSerial )
 	{
-		return 0.0;
-	}
-
-	switch (measure->type)
-	{
-	case MEASURE_MINOR:
-		return (double)osvi.dwMinorVersion;
-
-	case MEASURE_MAJOR:
-		return (double)osvi.dwMajorVersion;
-
-	case MEASURE_NUMBER:
-		return (double)osvi.dwMajorVersion + ((double)osvi.dwMinorVersion / 10.0);
+		if ( !fSerial->IsConnected() )
+		{
+			//RmLog( LOG_DEBUG, L"Connection closed!" );
+		}
 	}
 	*/
-	RmLog( LOG_DEBUG, L"Update triggered" );
-
-	if (!fSerial->IsConnected())
+	int value = 0;
+	if ( isOn )
 	{
-		RmLog( LOG_DEBUG, L"Port not connected, reconnecting ..." );
-		fSerial->Connect( const_cast<char*>( Port.c_str() ) );
+		std::lock_guard<std::mutex> lock( g_i_mutex );
+		value =  ( brightness_value / 255.0 ) * 100;
 	}
 
-	//fSerial->WriteData( &Init, 1 );
-/*
-	char* buffer = new char( 16 );
-	memset( buffer, 0, sizeof( buffer ) );
+	//RmLog( LOG_DEBUG, L"Update" );
+	//RmLog( LOG_DEBUG, std::to_wstring( value ).c_str() );
 
-	wchar_t value[16];
-
-	Sleep( 500 );
-
-	if ( fSerial->ReadData( buffer, sizeof( buffer ) ) != 1 )
-	{
-		fBrightnessValue = atoi( buffer );
-		mbstowcs( value, buffer, strlen( buffer ) + 1 );
-		LPWSTR ptr = value;
-
-		RmLog( LOG_DEBUG, L"Received response!" );
-		RmLog( LOG_DEBUG, value );
-	}
-
-	*/
-
-	double returnValue = NOT_SET_INT;
-
-	if ( fBrightnessValue != NOT_SET_INT )
-	{
-		returnValue = fBrightnessValue;
-	}
-
-	// MEASURE_STRING is not a number and and therefore will be returned in GetString.
-
-	return returnValue;
+	return value;
 }
-
+/*
 PLUGIN_EXPORT LPCWSTR GetString(void* data)
 {
 	Measure* measure = (Measure*)data;
 	static WCHAR buffer[128];
 
-	// GetVersionEx is an inexpensive operation, so we repeat it here. If what you
-	// measure requires an expensive operation, it is reccomended that you do it
-	// in Update (which is called only once per update cycle), store it in the
-	// Measure structure, and return it here. As GetString may be called multiple
-	// times per update cycle, it is not reccomended to do expensive operations here.
-	OSVERSIONINFOEX osvi = {sizeof(OSVERSIONINFOEX)};
-	if (!GetVersionEx((OSVERSIONINFO*)&osvi))
-	{
-		return NULL;
-	}
+	int value = Update( nullptr );
+	swprintf_s( buffer, L"%d", value );
 
-	switch (measure->type)
-	{
-	case MEASURE_STRING:
-		_snwprintf_s(buffer, _TRUNCATE, L"%i.%i (Build %i)", (int)osvi.dwMajorVersion, (int)osvi.dwMinorVersion, (int)osvi.dwBuildNumber);
-		return buffer;
-	}
-
-	// MEASURE_MAJOR, MEASURE_MINOR, and MEASURE_NUMBER are numbers. Therefore,
-	// NULL is returned here for them. This is to inform Rainmeter that it can
-	// treat those types as numbers.
-
-	return NULL;
+	return buffer;
 }
+*/
 
 PLUGIN_EXPORT void Finalize(void* data)
 {
-	Measure* measure = (Measure*)data;
-	delete measure;
-	delete fSerial;
-	fSerial = NULL;
+	delete serial;
+	serial = nullptr;
 }
 
 PLUGIN_EXPORT void ExecuteBang( void* data, LPCWSTR args )
@@ -307,37 +181,34 @@ PLUGIN_EXPORT void ExecuteBang( void* data, LPCWSTR args )
 		if ( _wcsicmp( bang.c_str(), L"ChangeBrightness" ) == 0 )
 		{
 			// Parse parameters
-			int index = 0;
-			if ( 1 == swscanf_s( wholeBang.c_str(), L"%d", &index ) )
+			int offset = 0;
+			if ( 1 == swscanf_s( wholeBang.c_str(), L"%d", &offset ) && offset )
 			{
-				std::wstring wstr = std::to_wstring( index );
-				std::string str = std::to_string( index )+",";
-				char* astr = new char(str.length() +1);
-				strcpy(astr, str.c_str());
-				//strcpy(astr, "I");	// just initiliaze the connection
-
-
-				LPCWSTR str_value = wstr.c_str();
-				RmLog( LOG_DEBUG, L"Changing brightness");
-				RmLog( LOG_DEBUG, str_value );
-
-				
-				if (NULL == fSerial || !fSerial->IsConnected())
-				{
-					RmLog( LOG_DEBUG, L"Creating port connection" );
-					//delete serial;
-					fSerial->Connect( const_cast<char*>(Port.c_str()));
-				}
-				fSerial->WriteData( astr, strlen( astr ) );
+				SetBrightness(0, offset);
 			}
 			else
 			{
-				RmLog( LOG_WARNING, L"Win7AudioPlugin.dll: Incorrect number of arguments for bang" );
-			}	
+				RmLog( LOG_WARNING, L"BrightnessControl.dll: Incorrect number of arguments for bang 'ChangeBrightness'" );
+			}
+		}
+		else if ( _wcsicmp( bang.c_str(), L"SetBrightness" ) == 0 )
+		{
+			// Parse parameters
+			int brightness = 0;
+			if ( 1 == swscanf_s( wholeBang.c_str(), L"%d", &brightness ) )
+			{
+				double procent = brightness/100.0;
+				brightness = 255*( procent );
+				SetBrightness( brightness );
+			}
+			else
+			{
+				RmLog( LOG_WARNING, L"BrightnessControl.dll: Incorrect number of arguments for bang 'SetBrightness'" );
+			}
 		}
 	}
 	else
 	{
-		RmLog( LOG_WARNING, L"ASDASD.dll: Unknown bang" );
+		RmLog( LOG_WARNING, L"BrightnessControl.dll: Unknown bang" );
 	}
 }

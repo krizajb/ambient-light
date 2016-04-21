@@ -1,4 +1,5 @@
 #include "Serial.h"
+#include "../../API/RainmeterAPI.h"
 
 Serial::Serial( char *portName )
 	: exit(false)
@@ -94,11 +95,11 @@ void Serial::ReadDataMain( void )
 			}
 			memset(buffer, 0, sizeof(buffer));
 		}
-		Sleep(10);
+		//Sleep(10);
 	}
 
 	// Clear buffer
-	delete buffer;
+	delete[] buffer;
 }
 
 
@@ -118,10 +119,28 @@ bool Serial::WriteData( const char *buffer, unsigned int nbChar )
 		return true;
 }
 
-bool Serial::IsConnected()
+bool Serial::IsConnected(void)
 {
 	//Simply return the connection status
-	return this->connected;
+	//return this->connected;
+
+	//Use the ClearCommError function to get status info on the Serial port
+	ClearCommError( this->hSerial, &this->errors, &this->status );
+
+	DCB dcbSerialParams ={ 0 };
+
+	//Try to get the current
+	GetCommState( this->hSerial, &dcbSerialParams );
+
+	auto isConnected = true;
+	//RmLog(LOG_DEBUG, dcbSerialParams.XoffLim );
+
+	if (dcbSerialParams.XoffLim == 0)
+	{
+		isConnected = false;
+	}
+
+	return isConnected;
 }
 
 void Serial::Disconnect( void )
@@ -145,7 +164,7 @@ void Serial::Connect( char* portName )
 	mbstowcs( port, portName, strlen( portName ) + 1 );
 	LPWSTR ptr = port;
 
-	//Try to connect to the given port throuh CreateFile
+	//Try to connect to the given port through CreateFile
 	this->hSerial = CreateFile( ptr,
 		GENERIC_READ | GENERIC_WRITE,
 		0,
@@ -154,14 +173,14 @@ void Serial::Connect( char* portName )
 		FILE_ATTRIBUTE_NORMAL,
 		NULL );
 
-	//Check if the connection was successfull
+	//Check if the connection was successful
 	if ( this->hSerial == INVALID_HANDLE_VALUE )
 	{
 		//If not success full display an Error
 		if ( GetLastError() == ERROR_FILE_NOT_FOUND )
 		{
 
-			//Print Error if neccessary
+			//Print Error if necessary
 			printf( "ERROR: Handle was not attached. Reason: %s not available.\n", portName );
 
 		}
@@ -172,6 +191,15 @@ void Serial::Connect( char* portName )
 	}
 	else
 	{
+		COMMTIMEOUTS timeout ={ 0 };
+
+		timeout.ReadIntervalTimeout = 50;
+		timeout.ReadTotalTimeoutConstant = 50;
+		timeout.ReadTotalTimeoutMultiplier = 10;
+		timeout.WriteTotalTimeoutConstant = 50;
+		timeout.WriteTotalTimeoutMultiplier = 10;
+
+
 		//If connected we try to set the comm parameters
 		DCB dcbSerialParams ={ 0 };
 
@@ -183,7 +211,7 @@ void Serial::Connect( char* portName )
 		}
 		else
 		{
-			//Define serial connection parameters for the arduino board
+			//Define serial connection parameters for the Arduino board
 			dcbSerialParams.BaudRate=CBR_9600;
 			dcbSerialParams.ByteSize=8;
 			dcbSerialParams.StopBits=ONESTOPBIT;
@@ -194,17 +222,18 @@ void Serial::Connect( char* portName )
 			dcbSerialParams.fDtrControl = DTR_CONTROL_DISABLE;	// Disabled tmp?
 
 			//Set the parameters and check for their proper application
-			if ( !SetCommState( hSerial, &dcbSerialParams ) )
+			if ( !SetCommState( this->hSerial, &dcbSerialParams ) )
 			{
 				printf( "ALERT: Could not set Serial Port parameters" );
 			}
 			else
 			{
+				SetCommTimeouts( this->hSerial, &timeout );
 				//If everything went fine we're connected
 				this->connected = true;
 				//Flush any remaining characters in the buffers 
 				PurgeComm( this->hSerial, PURGE_RXCLEAR | PURGE_TXCLEAR );
-				//We wait 2s as the arduino board will be reseting
+				//We wait 2s as the Arduino board will be reseting
 				//Sleep( ARDUINO_WAIT_TIME );
 			}
 		}
