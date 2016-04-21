@@ -95,7 +95,6 @@ void Serial::ReadDataMain( void )
 			}
 			memset(buffer, 0, sizeof(buffer));
 		}
-		//Sleep(10);
 	}
 
 	// Clear buffer
@@ -145,14 +144,10 @@ bool Serial::IsConnected(void)
 
 void Serial::Disconnect( void )
 {
-	//Check if we are connected before trying to disconnect
-	if ( this->connected )
-	{
-		//We're no longer connected
-		this->connected = false;
-		//Close the serial handler
-		CloseHandle( this->hSerial );
-	}
+	//We're no longer connected
+	this->connected = false;
+	//Close the serial handler, this is throwable i.e. caller should handle it
+	CloseHandle( this->hSerial );
 }
 
 void Serial::Connect( char* portName )

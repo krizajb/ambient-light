@@ -28,8 +28,13 @@ const int NOT_SET_INT = -1;
 const char Init('I');
 const char Share('S');
 const char Comma(',');
+const char On('n');
+const char Off('f');
 
-std::string Port("COM4");
+const double MIN = 0.0;
+const double MAX = 255.0;
+
+std::string Port("COM4");	// make it configurable
 
 static Serial* serial = nullptr;
 static int brightness_value = NOT_SET_INT;
@@ -37,25 +42,28 @@ static bool isOn = false;
 
 std::mutex g_i_mutex;  // protects brightness_value and isOn
 
+/* Sets brightness value if offset isn't set, offset changes currently set brightness value by the offset.
+ * Brightness value must be in MIN, MAX range.
+ */ 
 void SetBrightness( int value, int offset = 0 )
 {
-	auto brightness = value;
+	int brightness = value;
 
 	if ( 0 != offset )
 	{
 		brightness = brightness_value + offset;
 	}
 
-	if ( brightness >= 0 && brightness <= 255)
+	if ( brightness >= MIN && brightness <= MAX )
 	{
 		if ( brightness < 5 )
 		{
-			brightness = 0;
+			brightness = MIN;
 		}
 
 		if ( brightness > 250)
 		{
-			brightness = 255;
+			brightness = MAX;
 		}
 
 		{
@@ -68,34 +76,41 @@ void SetBrightness( int value, int offset = 0 )
 		char* astr = new char( str.length() + 1 );
 		strcpy( astr, str.c_str() );
 
-		serial->WriteData( astr, strlen( astr ) );
-
-		std::wstring wstr = std::to_wstring( brightness_value );
-		LPCWSTR str_value = wstr.c_str();
-		RmLog( LOG_DEBUG, L"Changing brightness" );
-		RmLog( LOG_DEBUG, str_value );
+		if ( !serial->WriteData( astr, strlen( astr ) ))
+		{
+			RmLog( LOG_ERROR, L"BrightnessControl.dll: Enable to write data to COM port" );
+		}
+		else
+		{
+			std::wstring wstr = std::to_wstring( brightness_value );
+			LPCWSTR str_value = wstr.c_str();
+			RmLog( LOG_DEBUG, L"BrightnessControl.dll: Changing brightness" );
+			RmLog( LOG_DEBUG, str_value );
+		}
 	}
 	else
 	{
-		// out of range brightness
+		RmLog( LOG_ERROR, L"BrightnessControl.dll: Brightness value out of range" );
 	}
 }
 
+/* Handles buffer data received from COM port.
+ */
 void DataAvail(const char* buffer)
 {
 	if (NULL == buffer) return;
 
-	RmLog( LOG_DEBUG, L"Data avail callback!" );
+	RmLog( LOG_DEBUG, L"BrightnessControl.dll: Data received: " );
 	wchar_t value[20];
 
 	mbstowcs( value, buffer, strlen( buffer ) + 1 );
 	LPWSTR ptr = value;
 
-	if (value[0] == 'f')
+	if (value[0] == Off)
 	{
 		isOn = false;
 	}
-	else if (value[0] == 'n')
+	else if (value[0] == On)
 	{
 		isOn = true;
 	}
@@ -107,7 +122,6 @@ void DataAvail(const char* buffer)
 	}
 
 	RmLog( LOG_DEBUG, value );
-
 }
 
 PLUGIN_EXPORT void Initialize(void** data, void* rm)
@@ -117,7 +131,6 @@ PLUGIN_EXPORT void Initialize(void** data, void* rm)
 	serial->WriteData(&Init, 1);
 }
 
-
 PLUGIN_EXPORT void Reload(void* data, void* rm, double* maxValue)
 {
 	*maxValue = 100;
@@ -125,28 +138,35 @@ PLUGIN_EXPORT void Reload(void* data, void* rm, double* maxValue)
 
 PLUGIN_EXPORT double Update(void* data)
 {
-	/*
-	// Implement auto reconnect!
-	if ( NULL != fSerial )
+	try
 	{
-		if ( !fSerial->IsConnected() )
+		// Auto reconnect, this should happen if monitor ie usb is turned off
+		if ( NULL != serial )
 		{
-			//RmLog( LOG_DEBUG, L"Connection closed!" );
+			if ( !serial->IsConnected() )
+			{
+				RmLog( LOG_WARNING, L"BrightnessControl.dll: Serial connection closed! Reconnecting ..." );
+				serial->Disconnect();
+				serial->Connect( const_cast<char*>(Port.c_str()) );
+			}
 		}
 	}
-	*/
-	int value = 0;
+	catch ( ... )
+	{
+		RmLog( LOG_ERROR, L"BrightnessControl.dll: Error during auto-reconnect progress" );
+	}
+
+	
+	auto value = 0;
 	if ( isOn )
 	{
 		std::lock_guard<std::mutex> lock( g_i_mutex );
-		value =  ( brightness_value / 255.0 ) * 100;
+		value =  ( brightness_value / MAX ) * 100;
 	}
-
-	//RmLog( LOG_DEBUG, L"Update" );
-	//RmLog( LOG_DEBUG, std::to_wstring( value ).c_str() );
 
 	return value;
 }
+
 /*
 PLUGIN_EXPORT LPCWSTR GetString(void* data)
 {
@@ -169,8 +189,6 @@ PLUGIN_EXPORT void Finalize(void* data)
 PLUGIN_EXPORT void ExecuteBang( void* data, LPCWSTR args )
 {
 	std::wstring wholeBang = args;
-
-	RmLog( LOG_DEBUG, args );
 
 	size_t pos = wholeBang.find( ' ' );
 	if ( pos != -1 )
@@ -197,8 +215,9 @@ PLUGIN_EXPORT void ExecuteBang( void* data, LPCWSTR args )
 			int brightness = 0;
 			if ( 1 == swscanf_s( wholeBang.c_str(), L"%d", &brightness ) )
 			{
+				// Skin returns procent, convert it into brightness value
 				double procent = brightness/100.0;
-				brightness = 255*( procent );
+				brightness = MAX*( procent );
 				SetBrightness( brightness );
 			}
 			else

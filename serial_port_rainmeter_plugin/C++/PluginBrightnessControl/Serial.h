@@ -31,7 +31,7 @@ private:
 	//Thread for reading serial data
 	std::thread readThread;
 
-	//Exit point from thread
+	//Exit point from readThread
 	bool exit;
 
 public:
@@ -57,7 +57,7 @@ public:
 	//Check if we are actually connected
 	bool IsConnected( void );
 
-	//Close the connection
+	//Close the connection, throwable
 	void Disconnect(void);
 
 	//Initialize Serial communication with the given portName
