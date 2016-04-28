@@ -24,6 +24,10 @@
 
 #include "../../API/RainmeterAPI.h"
 #include "Serial.h"
+#include "WindowsEvents.h"
+
+#define DELETE_AND_CLEAR(ptr) \
+	if (nullptr != ptr)  { delete ptr; ptr = nullptr; } \
 
 const int NOT_SET_INT = -1;
 
@@ -41,8 +45,9 @@ const int MIN = 0;
 const int MAX = 255;
 
 static Serial* serial = nullptr;
+static WindowsEvents* events = nullptr;
 static std::atomic<int> brightness_value = NOT_SET_INT;
-static std::atomic<bool> isOn = FALSE;
+static std::atomic<bool> isOn = false;
 
 // Status of led strip
 enum Status
@@ -85,14 +90,14 @@ void SetBrightness( int value, int offset = 0 )
 		{
 			//std::lock_guard<std::mutex> lock( g_i_mutex );
 			brightness_value = brightness;
-			isOn = TRUE;
+			isOn = true;
 		}
 
 		std::string str = std::to_string( brightness_value ) + Comma;
 		//char* astr = new char( int( str.length() ) + 1 );
 		//strcpy( astr, str.c_str() );
 
-		if ( !serial->WriteData( str.c_str() ) )
+		if ( nullptr != serial && !serial->WriteData( str.c_str() ) )
 		{
 			report.Format( L"BrightnessControl.dll: Enable to write data to '%hs' port.", Port.c_str() );
 			RmLog( LOG_ERROR, report );
@@ -110,11 +115,38 @@ void SetBrightness( int value, int offset = 0 )
 	}
 }
 
+// Handles windows event
+void WindowsEvent( const bool isInactive )
+{
+	// Turn on led strip
+	if ( !isInactive )
+	{
+		RmLog(LOG_DEBUG, L"Screensaver off ...");
+
+		if ( nullptr != serial )
+		{
+			serial->WriteData( "n", 1 );
+			isOn = true;
+		}
+	} 
+	// Turn off led strip
+	else
+	{
+		RmLog( LOG_DEBUG, L"Screensaver on ..." );
+
+		if ( nullptr != serial )
+		{
+			serial->WriteData( "f", 1 );
+			isOn = false;
+		}
+	}
+}
+
 /* Handles buffer data received from COM port.
  */
 void DataAvail( const char* data )
 {
-	if ( NULL == data ) return;
+	if ( nullptr == data ) return;
 
 	// Report string
 	CString report;
@@ -162,22 +194,31 @@ void DataAvail( const char* data )
 
 PLUGIN_EXPORT void Initialize( void** data, void* rm )
 {
-	Port = CW2A( RmReadString( rm, L"Port", L"COM8", FALSE ) );
+	Port = CW2A( RmReadString( rm, L"Port", L"COM8", false ) );
 	
-	StatusToBool.insert( std::make_pair( OFF, FALSE ) );
-	StatusToBool.insert( std::make_pair( ON, TRUE ) );
+	StatusToBool.insert( std::make_pair( OFF, false ) );
+	StatusToBool.insert( std::make_pair( ON, true ) );
+
+	events = new WindowsEvents();
+	events->notify = WindowsEvent;
 
 	// Allow controller to properly setup - this is blocking
 	serial = new Serial( const_cast<char *>( Port.c_str() ) );
 	serial->dataAvail = DataAvail;
 
 	// Send initialization to controller
-	if ( !serial->WriteData( &Init, 1 ) )
+	if ( !serial->WriteData( &Init ) )
 	{
 		CString report;
 		report.Format( L"BrightnessControl.dll: Unable to send initialization data to '%hs'", Port.c_str() );
 		RmLog( LOG_ERROR, report );
 	}
+}
+
+PLUGIN_EXPORT void Finalize( void* data )
+{
+	DELETE_AND_CLEAR( serial )
+	DELETE_AND_CLEAR( events )
 }
 
 PLUGIN_EXPORT void Reload( void* data, void* rm, double* maxValue )
@@ -190,13 +231,13 @@ PLUGIN_EXPORT double Update( void* data )
 	try
 	{
 		// Auto reconnect, this should happen if monitor ie usb is turned off
-		if ( NULL != serial )
+		if ( nullptr != serial )
 		{
 			if ( !serial->IsConnected() )
 			{
 				RmLog( LOG_WARNING, L"BrightnessControl.dll: Serial connection closed! Reconnecting ..." );
 				serial->Disconnect();
-				serial->Connect( const_cast<char*>( Port.c_str() ), TRUE );
+				serial->Connect( const_cast<char*>( Port.c_str() ), true );
 			}
 		}
 	}
@@ -230,12 +271,6 @@ PLUGIN_EXPORT LPCWSTR GetString(void* data)
 	return buffer;
 }
 */
-
-PLUGIN_EXPORT void Finalize( void* data )
-{
-	delete serial;
-	serial = nullptr;
-}
 
 PLUGIN_EXPORT void ExecuteBang( void* data, LPCWSTR args )
 {

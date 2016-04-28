@@ -3,9 +3,8 @@
 #include "Serial.h"
 
 #ifdef RAINMETER
-
-#include <atlstr.h>
-#include "../../API/RainmeterAPI.h"
+  #include <atlstr.h>
+  #include "../../API/RainmeterAPI.h"
 #endif
 
 Serial::Serial( char *portName )

@@ -30,6 +30,7 @@ bool isOn;
 int sBufferPos = 0; // position in read buffer
 char sBuffer[SIZE];
 char sByte;
+int sBrightness;
 
 // serial port fields
 const char Init( 'I' );
@@ -86,6 +87,7 @@ void setBrightness( int value )
     analogWrite( STRIP, value ); 
     delay( 30 );
     EEPROM.write( EPROM, value );
+    brightness = value;
   }
 }
 
@@ -184,7 +186,7 @@ void serialEvent()
   sBuffer[sBufferPos++] = sByte;
 
 // init serial communication
-  if ( sByte == 'I' )
+  if ( sByte == Init )
   {
     log( "Init com" );
   // notify current brightess
@@ -195,18 +197,40 @@ void serialEvent()
     sBuffer[sBufferPos-1] = 0;
     sBufferPos = sBufferPos-1;
   }
+// screensaver turned off
+  else if ( sByte == On )
+  {
+  // intentional bypassing EPROM save
+    analogWrite( STRIP, brightness ); 
+
+    //Serial.print( On );
+
+    sBuffer[sBufferPos-1] = 0;
+    sBufferPos = sBufferPos-1;
+  }
+// screensaver turned on
+  else if ( sByte == Off )
+  {
+  // intentional bypassing EPROM save
+    analogWrite( STRIP, 0 ); 
+
+    //Serial.print( Off );
+    
+    sBuffer[sBufferPos-1] = 0;
+    sBufferPos = sBufferPos-1;
+  }
 // check for delimiter
   else if ( sByte == ',' )
   {
     sBuffer[sBufferPos-1] = 0;
     log( "B"+String( sBuffer )+"B ", false );
 
-    brightness = atoi( sBuffer );
-    if ( brightness >= MIN && brightness <= MAX )
+    sBrightness = atoi( sBuffer );
+    if ( sBrightness >= MIN && sBrightness <= MAX )
     {
       isOn = true;
-      setBrightness( brightness );
-      log( "C"+String( brightness )+"C " );
+      setBrightness( sBrightness );
+      log( "C"+String( sBrightness )+"C " );
     }     
     sBufferPos = 0;
   }

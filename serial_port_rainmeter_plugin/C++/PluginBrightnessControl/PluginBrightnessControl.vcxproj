@@ -24,9 +24,11 @@
   <ItemGroup>
     <ClCompile Include="PluginBrightnessControl.cpp" />
     <ClCompile Include="Serial.cpp" />
+    <ClCompile Include="WindowsEvents.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Serial.h" />
+    <ClInclude Include="WindowsEvents.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{7FB00A1C-F0C0-49FD-A15C-392F69FDF645}</ProjectGuid>
