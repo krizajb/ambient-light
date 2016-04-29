@@ -91,6 +91,26 @@ void setBrightness( int value )
   }
 }
 
+void turnOn()
+{
+  int cBrightness = 0;
+  while ( cBrightness != brightness )
+  {
+     analogWrite( STRIP, cBrightness++ ); 
+     delay(30);
+  }
+}
+
+void turnOff()
+{
+  int cBrightness = brightness - 50;
+  while ( cBrightness != 0 )
+  {
+     analogWrite( STRIP, cBrightness-- ); 
+     delay(30);
+  }
+}
+
 // enables/disables led strip and stores value to eprom
 void setEnabled( bool value )
 {
@@ -201,7 +221,7 @@ void serialEvent()
   else if ( sByte == On )
   {
   // intentional bypassing EPROM save
-    analogWrite( STRIP, brightness ); 
+    turnOn();
 
     //Serial.print( On );
 
@@ -212,7 +232,7 @@ void serialEvent()
   else if ( sByte == Off )
   {
   // intentional bypassing EPROM save
-    analogWrite( STRIP, 0 ); 
+    turnOff();
 
     //Serial.print( Off );
     
