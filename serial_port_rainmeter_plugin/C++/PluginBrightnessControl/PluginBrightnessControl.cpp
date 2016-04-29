@@ -45,7 +45,7 @@ const int MIN = 0;
 const int MAX = 255;
 
 static Serial* serial = nullptr;
-static WindowsEvents* events = nullptr;
+static WindowsEvents* winEvents = nullptr;
 static std::atomic<int> brightness_value = NOT_SET_INT;
 static std::atomic<bool> isOn = false;
 
@@ -121,7 +121,7 @@ void WindowsEvent( const bool isInactive )
 	// Turn on led strip
 	if ( !isInactive )
 	{
-		RmLog(LOG_DEBUG, L"Screensaver off ...");
+		RmLog(LOG_DEBUG, L"BrightnessControl.dll: Screensaver off ");
 
 		if ( nullptr != serial )
 		{
@@ -132,7 +132,7 @@ void WindowsEvent( const bool isInactive )
 	// Turn off led strip
 	else
 	{
-		RmLog( LOG_DEBUG, L"Screensaver on ..." );
+		RmLog( LOG_DEBUG, L"BrightnessControl.dll: Screensaver on" );
 
 		if ( nullptr != serial )
 		{
@@ -195,15 +195,18 @@ void DataAvail( const char* data )
 PLUGIN_EXPORT void Initialize( void** data, void* rm )
 {
 	Port = CW2A( RmReadString( rm, L"Port", L"COM8", false ) );
+
+	unsigned long idle_time = _wtol(RmReadString( rm, L"UserIdle", L"120000", false )); // default 20min
 	
 	StatusToBool.insert( std::make_pair( OFF, false ) );
 	StatusToBool.insert( std::make_pair( ON, true ) );
 
-	events = new WindowsEvents();
-	events->notify = WindowsEvent;
+	winEvents = new ( std::nothrow ) WindowsEvents();
+	winEvents->SetUserIdleTime( idle_time );
+	winEvents->SetNotificationHandler( WindowsEvent );
 
 	// Allow controller to properly setup - this is blocking
-	serial = new Serial( const_cast<char *>( Port.c_str() ) );
+	serial = new ( std::nothrow ) Serial( const_cast<char *>( Port.c_str() ) );
 	serial->dataAvail = DataAvail;
 
 	// Send initialization to controller
@@ -218,7 +221,7 @@ PLUGIN_EXPORT void Initialize( void** data, void* rm )
 PLUGIN_EXPORT void Finalize( void* data )
 {
 	DELETE_AND_CLEAR( serial )
-	DELETE_AND_CLEAR( events )
+	DELETE_AND_CLEAR( winEvents )
 }
 
 PLUGIN_EXPORT void Reload( void* data, void* rm, double* maxValue )

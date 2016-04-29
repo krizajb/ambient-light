@@ -6,54 +6,90 @@
 #include <windows.h>
 #include <iostream>
 
-// do something after 10 minutes of user inactivity
-static const unsigned int idle_milliseconds = 60 * 1 * 1000;
-// wait at least an hour between two runs
-static const unsigned int interval = 60 * 60 * 1000;
 
 WindowsEvents::WindowsEvents()
 {
-	activityThread = std::thread( &WindowsEvents::ActivityMain, this );
+	this->activityThread = std::thread( &WindowsEvents::ActivityMain, this );
 }
 
+void WindowsEvents::SetNotificationHandler( std::function<void( const bool )> fn )
+{
+	this->notify = fn;
+}
+
+void WindowsEvents::SetUserIdleTime( unsigned const int ms )
+{
+	this->user_idle_time = ms;
+}
 
 WindowsEvents::~WindowsEvents()
 {
-	exit = true;
+	this->exit = true;
 
-	if ( activityThread.joinable() )
-		activityThread.join();
+	if ( this->activityThread.joinable() )
+	{
+		this->activityThread.join();
+	}
 }
 
-void WindowsEvents::ActivityMain( void )
+void WindowsEvents::ActivityMain( void ) const
 {
-	BOOL screensaver_running_change = FALSE;
 	BOOL screensaver_running = FALSE;
+
+	LASTINPUTINFO last_input;
+	last_input.cbSize = sizeof(last_input);
+
+	DWORD idle_time;
+	bool screensaverOn = false;
+
+	//CString report;
 
 	// main loop to check if user has been idle long enough
 	while ( !exit )
-	{
-		if ( !SystemParametersInfo( SPI_GETSCREENSAVERRUNNING, 0, &screensaver_running_change, 0 ) )
+	{		
+		if ( !SystemParametersInfo( SPI_GETSCREENSAVERRUNNING, 0, &screensaver_running, SPIF_SENDCHANGE )
+		  || !GetLastInputInfo( &last_input )
+			)
 		{
-			RmLog( LOG_ERROR, L"WinApi load error while retrieving 'SPI_GETSCREENSAVERRUNNING' info" );
+			RmLog( LOG_ERROR, L"WinApi load error while retrieving 'SPI_GETSCREENSAVERRUNNING' and 'GetLastInputInfo' info" );
 
 			Sleep( 500 );
 			continue;
 		}
 
-		// Change was detected, notify all interested parties
-		if ( screensaver_running_change != screensaver_running )
+		idle_time = GetTickCount() - last_input.dwTime;
+
+		//report.Format(L"Idle time '%d' allowed idle time '%d'", a, this->user_idle_time );
+		//RmLog( LOG_DEBUG, report );	
+
+		// Change was not detected, notify all interested parties
+		if ( idle_time < this->user_idle_time && !screensaver_running)
 		{
-			notify( screensaver_running_change );
-			screensaver_running = screensaver_running_change;
+			//RmLog( LOG_DEBUG, L"Active" );
+			if ( screensaverOn )
+			{
+				// Screensaver is not running
+				screensaverOn = false;
+				if ( nullptr != this->notify)
+				{
+					this->notify( false );
+				}
+			}
 		}
 		else
 		{
-			// Screensaver is not running
-			screensaver_running = screensaver_running_change;
-
-			Sleep( 500 );
-			continue;
+			//RmLog( LOG_DEBUG, L"Inactive" );
+			if ( !screensaverOn )
+			{
+				// Screensaver is running
+				screensaverOn = true;
+				if ( nullptr != this->notify )
+				{
+					this->notify( true );
+				}
+			}
 		}
+
+		Sleep( 500 );
 	}
 }
