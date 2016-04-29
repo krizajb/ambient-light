@@ -1,6 +1,7 @@
 #include <Intsafe.h>
 
 #include "Serial.h"
+#include "Measure.h"
 
 #ifdef RAINMETER
   #include <atlstr.h>
@@ -12,6 +13,7 @@ Serial::Serial( char *portName )
 	, connected( false )
 	, exit( false )
 	, dataAvail( nullptr )
+	, measure (nullptr)
 {
 	this->Connect( portName, true );
 	readThread = std::thread( &Serial::ReadDataMain, this );
@@ -22,6 +24,7 @@ Serial::Serial( void )
 	, connected( false )
 	, exit( false )
 	, dataAvail( nullptr )
+	, measure( nullptr )
 {
 	readThread = std::thread( &Serial::ReadDataMain, this );
 }
@@ -29,7 +32,8 @@ Serial::Serial( void )
 
 Serial::~Serial()
 {
-	this->Disconnect();
+	// Since it is throwable let user handle it outside the destructor
+	//this->Disconnect();
 	exit = true;
 
 	if ( readThread.joinable() )
@@ -114,10 +118,10 @@ void Serial::ReadDataMain( void )
 			//Try to read the require number of chars, and return the number of read bytes on success
 			if ( ReadFile( this->hSerial, buffer, toRead, &bytesRead, NULL ) )
 			{
-				if ( nullptr != dataAvail )
+				if ( nullptr != measure )
 				{
 					// Forward buffer to handler
-					dataAvail( buffer );
+					measure->SerialEventHandler( buffer );
 				}
 			}
 			memset( buffer, 0, sizeof( buffer ) );
@@ -161,6 +165,10 @@ bool Serial::WriteData( const char *buffer )
 	}
 	else
 	{
+		CString report;
+		report.Format(L"Sending to '%hs'", buffer);
+		RmLog(LOG_DEBUG, report );
+
 		DWORD bytesSend;
 		DWORD bytesToSend;
 		SIZETToDWord( strlen( buffer ), &bytesToSend );
@@ -200,6 +208,7 @@ bool Serial::IsConnected( void )
 	return isConnected;
 }
 
+// todo: make it thread safe
 void Serial::Disconnect( void )
 {
 	//We're no longer connected
@@ -208,6 +217,7 @@ void Serial::Disconnect( void )
 	CloseHandle( this->hSerial );
 }
 
+// todo: make it thread safe
 void Serial::Connect( char* portName, bool sleep )
 {
 	//We're not yet connected
@@ -241,7 +251,7 @@ void Serial::Connect( char* portName, bool sleep )
 		if ( GetLastError() == ERROR_FILE_NOT_FOUND )
 		{
 #ifdef RAINMETER
-			report.FormatMessage( L"ERROR: '%s' Handle was not attached. Reason not available.", portName );
+			report.FormatMessage( L"'%s' Handle was not attached. Reason not available.", portName );
 			RmLog( LOG_ERROR, report );
 #endif
 			printf( "ERROR: '%s' Handle was not attached.Reason not available.", portName );
@@ -249,7 +259,7 @@ void Serial::Connect( char* portName, bool sleep )
 		else
 		{
 #ifdef RAINMETER
-			report.FormatMessage( L"ERROR: Handle was not attached." );
+			report.FormatMessage( L"Handle was not attached." );
 			RmLog( LOG_ERROR, report );
 #endif
 			printf( "ERROR: '%s' Handle was not attached.", portName );
@@ -321,4 +331,9 @@ void Serial::Connect( char* portName, bool sleep )
 			}
 		}
 	}
+}
+
+void Serial::SetMeasure( Measure* const measure )
+{
+	this->measure = measure;
 }

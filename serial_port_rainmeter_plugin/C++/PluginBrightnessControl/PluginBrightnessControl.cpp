@@ -14,55 +14,16 @@
   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 
-#include <Windows.h>
-#include <cstdio>
-#include <string>
-#include <mutex>
-#include <atlstr.h>
-#include <atomic>
-#include <map>
+#include "Measure.h"
 
-#include "../../API/RainmeterAPI.h"
-#include "Serial.h"
-#include "WindowsEvents.h"
+WindowsEvents* win_events = nullptr;
+int win_events_ref_count = 0;
 
-#define DELETE_AND_CLEAR(ptr) \
-	if (nullptr != ptr)  { delete ptr; ptr = nullptr; } \
-
-const int NOT_SET_INT = -1;
-
-// Serial communication parameters
-const char Init( 'I' );
-const char Share( 'S' );
-const char Comma( ',' );
-const char On( 'n' );
-const char Off( 'f' );
-
-std::string Port( "COM7" );	
-
-// Brightness values
-const int MIN = 0;
-const int MAX = 255;
-
-static Serial* serial = nullptr;
-static WindowsEvents* winEvents = nullptr;
-static std::atomic<int> brightness_value = NOT_SET_INT;
-static std::atomic<bool> isOn = false;
-
-// Status of led strip
-enum Status
-{
-	OFF = 0,
-	ON,
-	UNDEFINED
-};
-
-std::map<Status, bool> StatusToBool;
 
 /* Sets brightness value if offset isn't set, offset changes currently set brightness value by the offset.
  * Brightness value must be in MIN, MAX range.
  */
-void SetBrightness( int value, int offset = 0 )
+void SetBrightness( Measure* const measure, int value, int offset = 0 )
 {
 	int brightness = value;
 
@@ -71,8 +32,7 @@ void SetBrightness( int value, int offset = 0 )
 
 	if ( 0 != offset )
 	{
-		//std::lock_guard<std::mutex> lock( g_i_mutex );
-		brightness = brightness_value + offset;
+		brightness = measure->brightness_value + offset;
 	}
 
 	if ( brightness >= MIN && brightness <= MAX )
@@ -88,140 +48,83 @@ void SetBrightness( int value, int offset = 0 )
 		}
 
 		{
-			//std::lock_guard<std::mutex> lock( g_i_mutex );
-			brightness_value = brightness;
-			isOn = true;
+			measure->brightness_value = brightness;
+			measure->isOn = true;
 		}
 
-		std::string str = std::to_string( brightness_value ) + Comma;
-		//char* astr = new char( int( str.length() ) + 1 );
-		//strcpy( astr, str.c_str() );
+		std::string str = std::to_string( measure->brightness_value ) + Comma;
 
-		if ( nullptr != serial && !serial->WriteData( str.c_str() ) )
+		if ( nullptr != measure->serial && !measure->serial->WriteData( str.c_str() ) )
 		{
-			report.Format( L"BrightnessControl.dll: Enable to write data to '%hs' port.", Port.c_str() );
+			report.Format( L"BrightnessControl.dll: Enable to write data to '%hs' port.", measure->port.c_str() );
 			RmLog( LOG_ERROR, report );
 		}
 		else
 		{
-			report.Format( L"BrightnessControl.dll: Changing brightness value '%d'", brightness_value );
+			report.Format( L"BrightnessControl.dll: Changing brightness value '%d'", measure->brightness_value );
 			RmLog( LOG_DEBUG, report );
 		}
 	}
 	else
 	{
-		report.Format( L"BrightnessControl.dll: Brightness value '%d' out of range", brightness_value );
+		report.Format( L"BrightnessControl.dll: Brightness value '%d' out of range", brightness );
 		RmLog( LOG_ERROR, report );
-	}
-}
-
-// Handles windows event
-void WindowsEvent( const bool isInactive )
-{
-	// Turn on led strip
-	if ( !isInactive )
-	{
-		RmLog(LOG_DEBUG, L"BrightnessControl.dll: Screensaver off ");
-
-		if ( nullptr != serial )
-		{
-			serial->WriteData( "n", 1 );
-			isOn = true;
-		}
-	} 
-	// Turn off led strip
-	else
-	{
-		RmLog( LOG_DEBUG, L"BrightnessControl.dll: Screensaver on" );
-
-		if ( nullptr != serial )
-		{
-			serial->WriteData( "f", 1 );
-			isOn = false;
-		}
-	}
-}
-
-/* Handles buffer data received from COM port.
- */
-void DataAvail( const char* data )
-{
-	if ( nullptr == data ) return;
-
-	// Report string
-	CString report;
-	report.Format( L"BrightnessControl.dll: Data received: '%hs' from '%hs'", data, Port.c_str() );
-
-	RmLog( LOG_DEBUG, report );
-
-	static char buffer[32];
-	static int bufferPos = 0;
-	const char* inbyte;
-	Status status = UNDEFINED;
-	int brightness = NOT_SET_INT;
-
-	for ( inbyte = data; *inbyte != '\0'; inbyte++ )
-	{
-		if ( *inbyte == Off )
-		{
-			status = OFF;
-		}
-		else if ( *inbyte == On )
-		{
-			status = ON;
-		}
-		else if ( *inbyte == Comma )
-		{
-			bufferPos = 0;
-			brightness = std::stoi( buffer );
-		}
-		else
-		{
-			buffer[bufferPos++] = *inbyte;
-		}
-	}
-
-	//std::lock_guard<std::mutex> lock( g_i_mutex );
-	if ( status != UNDEFINED )
-	{
-		isOn = StatusToBool[status];
-	}
-	if ( brightness != NOT_SET_INT )
-	{
-		brightness_value = brightness;
 	}
 }
 
 PLUGIN_EXPORT void Initialize( void** data, void* rm )
 {
-	Port = CW2A( RmReadString( rm, L"Port", L"COM8", false ) );
+	Measure* measure = new( std::nothrow )Measure;
 
-	unsigned long idle_time = _wtol(RmReadString( rm, L"UserIdle", L"120000", false )); // default 20min
-	
-	StatusToBool.insert( std::make_pair( OFF, false ) );
-	StatusToBool.insert( std::make_pair( ON, true ) );
+	std::string port = CW2A( RmReadString( rm, L"Port", L"COM8", false ) );
 
-	winEvents = new ( std::nothrow ) WindowsEvents();
-	winEvents->SetUserIdleTime( idle_time );
-	winEvents->SetNotificationHandler( WindowsEvent );
+	unsigned long idle_time = _wtol( RmReadString( rm, L"UserIdle", L"120000", false ) ); // default 20min
+	WindowsEvents::SetUserIdleTime( idle_time );
 
-	// Allow controller to properly setup - this is blocking
-	serial = new ( std::nothrow ) Serial( const_cast<char *>( Port.c_str() ) );
-	serial->dataAvail = DataAvail;
+	if ( nullptr == win_events )
+	{
+		win_events = new ( std::nothrow ) WindowsEvents();
+	}
+	win_events_ref_count++;
+	win_events->RegisterMeasure( measure );
+
+	// Allow controller to properly setup - this is 3sec blocking
+	Serial* serial = new ( std::nothrow ) Serial( const_cast<char *>( port.c_str() ) );
+	//serial->SetHandler( DataAvail );
+	serial->SetMeasure( measure );
 
 	// Send initialization to controller
-	if ( !serial->WriteData( &Init ) )
+	if ( !serial->WriteData( &Init, 1 ) )
 	{
 		CString report;
-		report.Format( L"BrightnessControl.dll: Unable to send initialization data to '%hs'", Port.c_str() );
+		report.Format( L"BrightnessControl.dll: Unable to send initialization data to '%hs'", port.c_str() );
 		RmLog( LOG_ERROR, report );
 	}
+
+	measure->serial = serial;
+	measure->port = port;
+	//measure->win_events = win_events;
+
+	*data = measure;
 }
 
 PLUGIN_EXPORT void Finalize( void* data )
 {
-	DELETE_AND_CLEAR( serial )
-	DELETE_AND_CLEAR( winEvents )
+	Measure* measure = (Measure*)data;
+
+	// this is by design, to avoid throws in destructor
+	measure->serial->Disconnect();
+	DELETE_AND_CLEAR( measure->serial )
+
+	win_events_ref_count--;
+	if ( win_events_ref_count == 0 )
+	{
+		// start using smart pointers!
+		DELETE_AND_CLEAR( win_events )
+	}
+
+
+	DELETE_AND_CLEAR( measure )
 }
 
 PLUGIN_EXPORT void Reload( void* data, void* rm, double* maxValue )
@@ -231,16 +134,19 @@ PLUGIN_EXPORT void Reload( void* data, void* rm, double* maxValue )
 
 PLUGIN_EXPORT double Update( void* data )
 {
+	Measure* measure = (Measure*)data;
+	if ( nullptr == measure ) return 0;
+
 	try
 	{
 		// Auto reconnect, this should happen if monitor ie usb is turned off
-		if ( nullptr != serial )
+		if ( nullptr != measure->serial )
 		{
-			if ( !serial->IsConnected() )
+			if ( !measure->serial->IsConnected() )
 			{
 				RmLog( LOG_WARNING, L"BrightnessControl.dll: Serial connection closed! Reconnecting ..." );
-				serial->Disconnect();
-				serial->Connect( const_cast<char*>( Port.c_str() ), true );
+				measure->serial->Disconnect();
+				measure->serial->Connect( const_cast<char*>( measure->port.c_str() ), true );
 			}
 		}
 	}
@@ -252,10 +158,9 @@ PLUGIN_EXPORT double Update( void* data )
 
 	double value = 0.0;
 	{
-		//std::lock_guard<std::mutex> lock( g_i_mutex );
-		if ( isOn )
+		if ( measure->isOn )
 		{
-			value =  ( brightness_value / double( MAX ) ) * 100.0;
+			value =  ( measure->brightness_value / double( MAX ) ) * 100.0;
 		}
 	}
 
@@ -277,6 +182,9 @@ PLUGIN_EXPORT LPCWSTR GetString(void* data)
 
 PLUGIN_EXPORT void ExecuteBang( void* data, LPCWSTR args )
 {
+	Measure* measure = (Measure*)data;
+	if ( nullptr == measure ) return;
+
 	std::wstring wholeBang = args;
 
 	size_t pos = wholeBang.find( ' ' );
@@ -291,7 +199,7 @@ PLUGIN_EXPORT void ExecuteBang( void* data, LPCWSTR args )
 			int offset = 0;
 			if ( 1 == swscanf_s( wholeBang.c_str(), L"%d", &offset ) && offset )
 			{
-				SetBrightness( 0, offset );
+				SetBrightness( measure, 0, offset );
 			}
 			else
 			{
@@ -307,7 +215,7 @@ PLUGIN_EXPORT void ExecuteBang( void* data, LPCWSTR args )
 				// Skin returns procent, convert it into brightness value
 				double procent = brightness / 100.0;
 				brightness = int( MAX*( procent ) );
-				SetBrightness( brightness );
+				SetBrightness( measure, brightness );
 			}
 			else
 			{

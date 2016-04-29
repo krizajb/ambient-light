@@ -14,6 +14,8 @@
 #include <thread>
 
 
+struct Measure;
+
 class Serial
 {
 private:
@@ -34,6 +36,12 @@ private:
 
 	//Exit point from readThread
 	bool exit;
+
+	//Measure 
+	Measure* measure;
+
+	//Function pointer for data handling
+	std::function<void( Measure* const measure, const char* )> dataAvail;
 
 public:
 	//Initialize Serial communication with the given COM port
@@ -70,8 +78,8 @@ public:
 	//Initialize Serial communication with the given portName
 	void Connect( char* portName, bool sleep = false );
 
-	//Function pointer for data avail notification
-	std::function<void( const char* )> dataAvail;
+	//Setters
+	void SetMeasure( Measure* const measure );
 };
 
 #endif // SERIALCLASS_H_INCLUDED
