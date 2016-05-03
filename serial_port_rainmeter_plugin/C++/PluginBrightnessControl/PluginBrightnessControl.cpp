@@ -16,8 +16,11 @@
 
 #include "Measure.h"
 
-WindowsEvents* win_events = nullptr;
-int win_events_ref_count = 0;
+static std::shared_ptr<WindowsEvents> win_events( nullptr );
+
+// Added since rainmeter doesn't support smart pointer, never delete raw data* pointer
+// Setting rainmeter is owner of Measure instance
+std::list<std::shared_ptr<Measure>> measures;
 
 
 /* Sets brightness value if offset isn't set, offset changes currently set brightness value by the offset.
@@ -56,7 +59,7 @@ void SetBrightness( Measure* const measure, int value, int offset = 0 )
 
 		if ( nullptr != measure->serial && !measure->serial->WriteData( str.c_str() ) )
 		{
-			report.Format( L"BrightnessControl.dll: Enable to write data to '%hs' port.", measure->port.c_str() );
+			report.Format( L"BrightnessControl.dll: Enable to write data to '%hs' port.", measure->serial->Port().c_str() );
 			RmLog( LOG_ERROR, report );
 		}
 		else
@@ -74,7 +77,8 @@ void SetBrightness( Measure* const measure, int value, int offset = 0 )
 
 PLUGIN_EXPORT void Initialize( void** data, void* rm )
 {
-	Measure* measure = new( std::nothrow )Measure;
+	std::shared_ptr<Measure> measure = std::make_shared<Measure>();
+	measures.push_back( measure );
 
 	std::string port = CW2A( RmReadString( rm, L"Port", L"COM8", false ) );
 
@@ -83,48 +87,52 @@ PLUGIN_EXPORT void Initialize( void** data, void* rm )
 
 	if ( nullptr == win_events )
 	{
-		win_events = new ( std::nothrow ) WindowsEvents();
+		win_events = std::make_shared<WindowsEvents>();
 	}
-	win_events_ref_count++;
 	win_events->RegisterMeasure( measure );
 
 	// Allow controller to properly setup - this is 3sec blocking
-	Serial* serial = new ( std::nothrow ) Serial( const_cast<char *>( port.c_str() ) );
-	//serial->SetHandler( DataAvail );
+	std::shared_ptr<Serial> serial = std::make_shared<Serial>( port.c_str() );
 	serial->SetMeasure( measure );
 
 	// Send initialization to controller
 	if ( !serial->WriteData( &Init, 1 ) )
 	{
 		CString report;
-		report.Format( L"BrightnessControl.dll: Unable to send initialization data to '%hs'", port.c_str() );
+		report.Format( L"BrightnessControl.dll: Unable to send initialization data to '%hs', error '%lu'", port.c_str(), serial->Error() );
 		RmLog( LOG_ERROR, report );
 	}
 
 	measure->serial = serial;
-	measure->port = port;
-	//measure->win_events = win_events;
+	measure->win_events = win_events;
 
-	*data = measure;
+	*data = measure.get();
 }
 
 PLUGIN_EXPORT void Finalize( void* data )
 {
 	Measure* measure = (Measure*)data;
 
-	// this is by design, to avoid throws in destructor
-	measure->serial->Disconnect();
-	DELETE_AND_CLEAR( measure->serial )
-
-	win_events_ref_count--;
-	if ( win_events_ref_count == 0 )
+	// Finally find shared pointer of measure and dereference it
+	std::list<std::shared_ptr<Measure>>::iterator it = measures.begin();
+	while ( it != measures.end() )
 	{
-		// start using smart pointers!
-		DELETE_AND_CLEAR( win_events )
+		if (it->get() == measure)
+		{
+			it = measures.erase(it);
+		}
+		if ( it == measures.end() || measures.size() == 0 )
+		{
+			break;
+		}
+		++it;
 	}
 
-
-	DELETE_AND_CLEAR( measure )
+	// No one is using win_events, destroy it
+	if (win_events.use_count() == 1)
+	{
+		win_events.reset();
+	}
 }
 
 PLUGIN_EXPORT void Reload( void* data, void* rm, double* maxValue )
@@ -145,8 +153,7 @@ PLUGIN_EXPORT double Update( void* data )
 			if ( !measure->serial->IsConnected() )
 			{
 				RmLog( LOG_WARNING, L"BrightnessControl.dll: Serial connection closed! Reconnecting ..." );
-				measure->serial->Disconnect();
-				measure->serial->Connect( const_cast<char*>( measure->port.c_str() ), true );
+				measure->serial->Reconnect( true );
 			}
 		}
 	}

@@ -13,14 +13,16 @@ struct Measure;
 class Window : public BaseWindow<Window>
 {
 public:
-	Window( std::list<Measure*> &measures );
+	Window( std::list<std::weak_ptr<Measure>> &measures );
 
+	// Returns unique class name
 	virtual PCWSTR  ClassName( void ) const override;
+	// Overloads WindowProc, catching windows sleep events
 	virtual LRESULT HandleMessage( UINT uMsg, WPARAM wParam, LPARAM lParam ) override;
 
 private:
-	// list of registered event listeners
-	std::list<Measure*> &measures;
+	// List of registered event listeners
+	std::list<std::weak_ptr<Measure>> &measures;
 
 	// notifies all registered event listeners 
 	void Notify( const bool value ) const;
@@ -37,9 +39,9 @@ public:
 	WindowsEvents();
 	~WindowsEvents();
 
-	// registers measure for windows event notifications
-	void RegisterMeasure(Measure* measure);
-	// sets allowed user idle time, default idle time 20min
+	// Registers measure for windows event notifications
+	void RegisterMeasure( std::weak_ptr<Measure> measure );
+	// Sets allowed user idle time, default idle time 20min
 	static void SetUserIdleTime(unsigned const int ms);
 
 private:
@@ -49,25 +51,25 @@ private:
 	// SleepMain thread, controlled by exit flag
 	std::thread sleepThread;
 
-	// exit point of activityThread
+	// Exit point of activityThread and sleepThread
 	bool exit = false;
 
-	// user idle time allowed
+	// User idle time allowed
 	static unsigned int user_idle_time;	// 20 minutes
 
-	// list of registered event listeners
-	std::list<Measure*> measures;
+	// List of registered event listeners
+	std::list<std::weak_ptr<Measure>> measures;
 
-	// hidden window catching sleep event
-	Window* hidden_window;
+	// Hidden window catching sleep event
+	std::shared_ptr<Window> hidden_window;
 
 
-	// notifies all registered event listeners 
+	// Notifies all registered event listeners 
 	void Notify(const bool value) const;
 
-	// screensaver and user idle detection
-	void ActivityMain( void ) ;
+	// Screensaver and user idle detection
+	void ActivityMain( void ) const;
 
-	// sleep detection
+	// Sleep detection
 	void SleepMain( void );
 };

@@ -8,36 +8,29 @@
   #include "../../API/RainmeterAPI.h"
 #endif
 
-Serial::Serial( char *portName )
-	: hSerial( nullptr )
-	, connected( false )
-	, exit( false )
-	, dataAvail( nullptr )
-	, measure (nullptr)
+Serial::Serial( const char *portName )
+	: port (portName)
 {
 	this->Connect( portName, true );
 	readThread = std::thread( &Serial::ReadDataMain, this );
 }
 
 Serial::Serial( void )
-	: hSerial( nullptr )
-	, connected( false )
-	, exit( false )
-	, dataAvail( nullptr )
-	, measure( nullptr )
 {
 	readThread = std::thread( &Serial::ReadDataMain, this );
 }
 
-
 Serial::~Serial()
 {
-	// Since it is throwable let user handle it outside the destructor
-	//this->Disconnect();
-	exit = true;
+	this->exit = true;
 
-	if ( readThread.joinable() )
-		readThread.join();
+	if ( this->readThread.joinable() )
+	{
+		this->readThread.join();
+	}
+
+	this->Disconnect();
+	this->hSerial = INVALID_HANDLE_VALUE;
 }
 
 int Serial::ReadData( char *buffer, unsigned int nbChar )
@@ -46,6 +39,8 @@ int Serial::ReadData( char *buffer, unsigned int nbChar )
 	DWORD bytesRead;
 	//Number of bytes we'll really ask to read
 	unsigned int toRead;
+
+	//std::lock_guard<std::mutex> lock( this->mutex );
 
 	//Use the ClearCommError function to get status info on the Serial port
 	ClearCommError( this->hSerial, &this->errors, &this->status );
@@ -66,7 +61,7 @@ int Serial::ReadData( char *buffer, unsigned int nbChar )
 		}
 
 		//Try to read the require number of chars, and return the number of read bytes on success
-		if ( ReadFile( this->hSerial, buffer, toRead, &bytesRead, NULL ) )
+		if ( ReadFile( this->hSerial, buffer, toRead, &bytesRead, nullptr ) )
 		{
 			return bytesRead;
 		}
@@ -75,7 +70,6 @@ int Serial::ReadData( char *buffer, unsigned int nbChar )
 
 	//If nothing has been read, or that an error was detected return 0
 	return 0;
-
 }
 
 void Serial::ReadDataMain( void )
@@ -97,6 +91,8 @@ void Serial::ReadDataMain( void )
 
 	while ( !exit )
 	{
+		//std::lock_guard<std::mutex> lock( this->mutex );
+
 		//Use the ClearCommError function to get status info on the Serial port
 		ClearCommError( this->hSerial, &this->errors, &this->status );
 
@@ -116,12 +112,13 @@ void Serial::ReadDataMain( void )
 			}
 
 			//Try to read the require number of chars, and return the number of read bytes on success
-			if ( ReadFile( this->hSerial, buffer, toRead, &bytesRead, NULL ) )
+			if ( ReadFile( this->hSerial, buffer, toRead, &bytesRead, nullptr ) )
 			{
-				if ( nullptr != measure )
+				std::shared_ptr<Measure> locked_measure = measure.lock();
+				if ( nullptr != locked_measure )
 				{
 					// Forward buffer to handler
-					measure->SerialEventHandler( buffer );
+					locked_measure->SerialEventHandler( buffer );
 				}
 			}
 			memset( buffer, 0, sizeof( buffer ) );
@@ -136,6 +133,7 @@ void Serial::ReadDataMain( void )
 bool Serial::WriteData( const char *buffer, unsigned int nbChar )
 {
 	bool returnValue = true;
+	//std::lock_guard<std::mutex> lock( this->mutex );
 
 	if ( this->hSerial == nullptr )
 	{
@@ -144,11 +142,12 @@ bool Serial::WriteData( const char *buffer, unsigned int nbChar )
 	else
 	{
 		DWORD bytesSend;
-		//Try to write the buffer on the Serial port
-		if ( !WriteFile( this->hSerial, (void *)buffer, nbChar, &bytesSend, 0 ) )
+		// Try to write the buffer on the Serial port
+		if ( !WriteFile( this->hSerial, (void *)buffer, nbChar, &bytesSend, nullptr ) )
 		{
-			//In case it don't work get comm error and return false
+			// In case it don't work get comm error and return false
 			ClearCommError( this->hSerial, &this->errors, &this->status );
+			returnValue = false;
 		}
 	}
 
@@ -158,6 +157,7 @@ bool Serial::WriteData( const char *buffer, unsigned int nbChar )
 bool Serial::WriteData( const char *buffer )
 {
 	bool returnValue = true;
+	//std::lock_guard<std::mutex> lock( this->mutex );
 
 	if ( this->hSerial == nullptr )
 	{
@@ -166,18 +166,19 @@ bool Serial::WriteData( const char *buffer )
 	else
 	{
 		CString report;
-		report.Format(L"Sending to '%hs'", buffer);
+		report.Format(L"Sending '%hs' to '%hs'", buffer, this->port.c_str());
 		RmLog(LOG_DEBUG, report );
 
-		DWORD bytesSend;
+		DWORD bytesSent;
 		DWORD bytesToSend;
 		SIZETToDWord( strlen( buffer ), &bytesToSend );
 
-		//Try to write the buffer on the Serial port
-		if ( !WriteFile( this->hSerial, (void *)buffer, bytesToSend, &bytesSend, 0 ) )
+		// Try to write the buffer on the Serial port
+		if ( !WriteFile( this->hSerial, (void *)buffer, bytesToSend, &bytesSent, nullptr ) )
 		{
-			//In case it don't work get comm error and return false
+			// In case it don't work get comm error and return false
 			ClearCommError( this->hSerial, &this->errors, &this->status );
+			returnValue = false;
 		}
 	}
 
@@ -186,20 +187,20 @@ bool Serial::WriteData( const char *buffer )
 
 bool Serial::IsConnected( void )
 {
-	//Simply return the connection status
-	//return this->connected;
+	bool isConnected = true;
 
-	//Use the ClearCommError function to get status info on the Serial port
+	//std::lock_guard<std::mutex> lock( this->mutex );
+
+	// Use the ClearCommError function to get status info on the Serial port
 	ClearCommError( this->hSerial, &this->errors, &this->status );
 
-	DCB dcbSerialParams ={ 0 };
+	DCB dcbSerialParams = { 0 };
 
-	//Try to get the current
+	// Try to get the current state
 	GetCommState( this->hSerial, &dcbSerialParams );
 
-	auto isConnected = true;
-	//RmLog(LOG_DEBUG, dcbSerialParams.XoffLim );
-
+	// This is working, note that for proper 100% serial connection check
+	// one has to have a request-response mechanism 
 	if ( dcbSerialParams.XoffLim == 0 )
 	{
 		isConnected = false;
@@ -208,24 +209,32 @@ bool Serial::IsConnected( void )
 	return isConnected;
 }
 
-// todo: make it thread safe
+void Serial::Reconnect( bool sleep )
+{
+	this->Disconnect();
+	this->Connect(this->port.c_str(), sleep );
+}
+
+void Serial::Reconnect( const char* portName, bool sleep )
+{
+	this->Disconnect();
+	this->Connect( portName, sleep );
+}
+
 void Serial::Disconnect( void )
 {
-	//We're no longer connected
-	this->connected = false;
-	//Close the serial handler, this is throwable i.e. caller should handle it
+	//std::lock_guard<std::mutex> lock(this->mutex);
+	// Close the serial handler
 	CloseHandle( this->hSerial );
 }
 
-// todo: make it thread safe
-void Serial::Connect( char* portName, bool sleep )
+void Serial::Connect( const char* portName, bool sleep )
 {
-	//We're not yet connected
-	this->connected = false;
-
 	wchar_t port[20];
 	mbstowcs( port, portName, strlen( portName ) + 1 );
 	LPWSTR ptr = port;
+
+	this->port = portName;
 
 #ifdef RAINMETER
 	// Report string
@@ -235,14 +244,16 @@ void Serial::Connect( char* portName, bool sleep )
 #endif
 	printf( "Connecting to '%s' ...", portName );
 
+	//std::lock_guard<std::mutex> lock( this->mutex );
+
 	//Try to connect to the given port through CreateFile
 	this->hSerial = CreateFile( ptr,
 		GENERIC_READ | GENERIC_WRITE,
 		0,
-		NULL,
+		nullptr,
 		OPEN_EXISTING,
 		FILE_ATTRIBUTE_NORMAL,
-		NULL );
+		nullptr );
 
 	//Check if the connection was successful
 	if ( this->hSerial == INVALID_HANDLE_VALUE )
@@ -314,7 +325,6 @@ void Serial::Connect( char* portName, bool sleep )
 			{
 				SetCommTimeouts( this->hSerial, &timeout );
 				//If everything went fine we're connected
-				this->connected = true;
 
 #ifdef RAINMETER
 				report.Format( L"Connected to '%hs' ...", portName );
@@ -333,7 +343,22 @@ void Serial::Connect( char* portName, bool sleep )
 	}
 }
 
-void Serial::SetMeasure( Measure* const measure )
+void Serial::SetMeasure( std::weak_ptr<Measure> measure )
 {
 	this->measure = measure;
+}
+
+void Serial::SetPort( const char* portName )
+{
+	this->port = portName;
+}
+
+std::string Serial::Port( void )const
+{
+	return this->port;
+}
+
+DWORD Serial::Error( void ) const
+{
+	return this->errors;
 }

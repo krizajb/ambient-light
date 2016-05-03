@@ -1,7 +1,6 @@
 #pragma once
 
 #include <atomic>
-#include <cstdio>
 #include <string>
 #include <atlstr.h>
 
@@ -13,13 +12,16 @@
 
 struct Measure
 {
-	Serial* serial = nullptr;
+	std::shared_ptr<Serial> serial;
 	std::atomic<int> brightness_value = NOT_SET_INT;
 	std::atomic<bool> isOn = false;
-	std::string port;
+
+	// this is here just for reference counting
+	std::shared_ptr<WindowsEvents> win_events;
 
 	void WindowsEventHandler( const bool isInactive );
 	void SerialEventHandler( char* const data);
+
 };
 
 inline void Measure::WindowsEventHandler( const bool isInactive )
@@ -33,8 +35,7 @@ inline void Measure::WindowsEventHandler( const bool isInactive )
 		{
 			if ( !this->serial->IsConnected() )
 			{
-				this->serial->Disconnect();
-				this->serial->Connect( const_cast<char*>( this->port.c_str() ), true );
+				this->serial->Reconnect( true );
 			}
 			this->serial->WriteData( &On, 1 );
 			this->isOn = true;
@@ -47,6 +48,10 @@ inline void Measure::WindowsEventHandler( const bool isInactive )
 
 		if ( nullptr != this->serial )
 		{
+			if ( !this->serial->IsConnected() )
+			{
+				this->serial->Reconnect( true );
+			}
 			this->serial->WriteData( &Off, 1 );
 			this->isOn = false;
 		}
@@ -60,7 +65,7 @@ inline void Measure::SerialEventHandler( char* const data )
 
 	// Report string
 	CString report;
-	report.Format( L"BrightnessControl.dll: Data received: '%hs' from '%hs'", data, this->port.c_str() );
+	report.Format( L"BrightnessControl.dll: Data received: '%hs' from '%hs'", data, this->serial->Port().c_str() );
 
 	RmLog( LOG_DEBUG, report );
 

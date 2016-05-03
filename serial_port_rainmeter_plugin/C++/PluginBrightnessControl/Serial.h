@@ -8,10 +8,8 @@
 #define RAINMETER
 
 #include <windows.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <functional> 
 #include <thread>
+#include <mutex>
 
 
 struct Measure;
@@ -19,33 +17,33 @@ struct Measure;
 class Serial
 {
 private:
-	//Serial comm handler
-	HANDLE hSerial;
+	// Serial comm handler
+	HANDLE hSerial = nullptr;
 
-	//Connection status
-	bool connected;
-
-	//Get various information about the connection
+	// Get various information about the connection
 	COMSTAT status;
 
-	//Keep track of last error
+	// Keep track of last error
 	DWORD errors;
 
-	//Thread for reading serial data
+	// Thread for reading serial data
 	std::thread readThread;
 
-	//Exit point from readThread
-	bool exit;
+	// Exit point from readThread
+	bool exit = false;
 
-	//Measure 
-	Measure* measure;
+	// Port name used for connection establishment
+	std::string port;
 
-	//Function pointer for data handling
-	std::function<void( Measure* const measure, const char* )> dataAvail;
+	// Measure used for notification
+	std::weak_ptr<Measure> measure;
+
+	// Protects all Serial members (just to be 100% sure)
+	//std::mutex mutex;
 
 public:
 	//Initialize Serial communication with the given COM port
-	Serial( char *portName );
+	Serial( const char *portName );
 
 	//Initialize Serial communication
 	Serial( void );
@@ -53,33 +51,43 @@ public:
 	//Close the connection
 	~Serial();
 
-	//Read data in a buffer, if nbChar is greater than the
-	//maximum number of bytes available, it will return only the
-	//bytes available. The function return -1 when nothing could
-	//be read, the number of bytes actually read.
+	// Read data in a buffer, if nbChar is greater than the
+	// maximum number of bytes available, it will return only the
+	// bytes available. The function return -1 when nothing could
+	// be read, the number of bytes actually read.
 	int ReadData( char *buffer, unsigned int nbChar );
 
-	//See ReadData(), this runs in separated thread and calls dataAvail
+	// See ReadData(), this runs in separated thread and notifies #measure
 	void ReadDataMain( void );
 
-	//Writes data from a buffer through the Serial connection
-	//return true on success.
+	// Writes data from a buffer through the Serial connection
+	// return true on success.
 	bool WriteData( const char *buffer, unsigned int nbChar );
 
-	//Same as above but attempts to sends whole buffer
+	// Same as above but attempts to sends whole buffer
 	bool WriteData( const char *buffer);
 
-	//Check if we are actually connected
+	// Check if we are actually connected
 	bool IsConnected( void );
 
-	//Close the connection, throwable
+	// Close the connection, throwable
 	void Disconnect(void);
 
-	//Initialize Serial communication with the given portName
-	void Connect( char* portName, bool sleep = false );
+	// Initialize Serial communication with the given portName
+	void Connect( const char* portName, bool sleep = false );
 
-	//Setters
-	void SetMeasure( Measure* const measure );
+	// Reconnects to set port
+	void Reconnect( bool sleep = false );
+
+	// Reconnects to given portName
+	void Reconnect( const char* portName, bool sleep = false );
+
+	// Setters/Getters
+	void SetMeasure( std::weak_ptr<Measure> measure );
+	void SetPort( const char* portName );
+
+	std::string Port( void ) const;
+	DWORD Error(void) const;
 };
 
 #endif // SERIALCLASS_H_INCLUDED

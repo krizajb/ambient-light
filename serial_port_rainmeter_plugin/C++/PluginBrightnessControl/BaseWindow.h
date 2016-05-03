@@ -34,8 +34,18 @@ public:
 		}
 	}
 
-	BaseWindow() : m_hwnd( nullptr ) { }
-	virtual ~BaseWindow() { }
+	BaseWindow( void ) : m_hwnd( nullptr )
+	{
+	}
+
+	virtual ~BaseWindow()
+	{
+		if ( registered )
+		{
+			UnregisterClass( this->wc.lpszClassName, this->wc.hInstance );
+			registered = false;
+		}
+	}
 
 	BOOL Create(
 		PCWSTR lpWindowName,
@@ -49,32 +59,43 @@ public:
 		HMENU hMenu = nullptr
 	)
 	{
-		WNDCLASS wc ={ 0 };
+		PCWSTR className = this->ClassName();
 
-		wc.lpfnWndProc   = DERIVED_TYPE::WindowProc;
-		wc.hInstance     = GetModuleHandle( nullptr );
-		wc.lpszClassName = ClassName();
+		this->wc.lpfnWndProc   = DERIVED_TYPE::WindowProc;
+		this->wc.hInstance     = GetModuleHandle( nullptr );
+		this->wc.lpszClassName = className;
 
-		if ( RegisterClass( &wc ) )
+		if ( RegisterClass( &this->wc ) )
 		{
-			m_hwnd = CreateWindowEx(
-				dwExStyle, ClassName(), lpWindowName, dwStyle, x, y,
+			this->m_hwnd = CreateWindowEx(
+				dwExStyle, className, lpWindowName, dwStyle, x, y,
 				nWidth, nHeight, hWndParent, hMenu, GetModuleHandle( nullptr ), this
 			);
+			this->registered = true;
+		}
+		else
+		{
+			this->registered = false;
 		}
 
-		return ( m_hwnd ? TRUE : FALSE );
+		return ( this->m_hwnd ? TRUE : FALSE );
 	}
 
-	HWND WindowHandle() const
+	HWND WindowHandle( void ) const
 	{
-		return m_hwnd;
+		return this->m_hwnd;
 	}
 
 protected:
-	virtual PCWSTR  ClassName() const = 0;
+	virtual PCWSTR  ClassName( void ) const = 0;
 	virtual LRESULT HandleMessage( UINT uMsg, WPARAM wParam, LPARAM lParam ) = 0;
 
 	HWND m_hwnd;
+	// Windows class for registration
+	WNDCLASS wc ={ 0 };
+
+private:
+	// Register flag for #wc
+	bool registered = false;
 };
 
