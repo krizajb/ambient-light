@@ -7,6 +7,8 @@ const int NOT_SET_INT = -1;
 #define DELETE_AND_CLEAR(ptr) \
 	if ( nullptr != ptr)  { delete ptr; ptr = nullptr; } \
 
+#define UNUSED(ptr) (void) ptr;
+
 // Serial communication parameters
 const char Init( 'I' );
 const char Share( 'S' );

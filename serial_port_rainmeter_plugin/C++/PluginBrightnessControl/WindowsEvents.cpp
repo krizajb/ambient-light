@@ -34,7 +34,7 @@ LRESULT Window::HandleMessage( UINT uMsg, WPARAM wParam, LPARAM lParam )
 	if ( uMsg == WM_POWERBROADCAST )
 	{
 		CString report;
-		report.Format( L"WM_POWERBROADCAST wParam '%d' lParam '%d'", wParam, lParam );
+		report.Format( L"WM_POWERBROADCAST wParam '%llu' lParam '%llu'", wParam, lParam );
 
 		RmLog( LOG_DEBUG, report );
 
@@ -107,7 +107,7 @@ void WindowsEvents::SleepMain( void )
 {
 	this->hidden_window = std::make_shared<Window>( this->measures );
 
-	if ( !this->hidden_window->Create( _T( "Hidden" ), 0, 0, 0, 0, 0, NULL, NULL, NULL) )
+	if ( !this->hidden_window->Create( _T( "Hidden" ), 0, 0, 0, 0, 0, NULL, nullptr, nullptr ) )
 	{
 		return;
 	}

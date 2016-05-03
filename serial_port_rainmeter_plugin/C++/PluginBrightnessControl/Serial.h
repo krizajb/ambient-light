@@ -42,13 +42,13 @@ private:
 	//std::mutex mutex;
 
 public:
-	//Initialize Serial communication with the given COM port
+	// Initialize Serial communication with the given COM port
 	Serial( const char *portName );
 
-	//Initialize Serial communication
+	// Initialize Serial communication
 	Serial( void );
 
-	//Close the connection
+	// Close the connection
 	~Serial();
 
 	// Read data in a buffer, if nbChar is greater than the
@@ -71,7 +71,7 @@ public:
 	bool IsConnected( void );
 
 	// Close the connection, throwable
-	void Disconnect(void);
+	void Disconnect(void) const;
 
 	// Initialize Serial communication with the given portName
 	void Connect( const char* portName, bool sleep = false );

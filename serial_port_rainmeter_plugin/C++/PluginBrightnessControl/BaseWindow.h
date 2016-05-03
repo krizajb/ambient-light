@@ -40,10 +40,9 @@ public:
 
 	virtual ~BaseWindow()
 	{
-		if ( registered )
+		if ( GetClassInfo( this->wc.hInstance, this->wc.lpszClassName, &this->wc ) )
 		{
 			UnregisterClass( this->wc.lpszClassName, this->wc.hInstance );
-			registered = false;
 		}
 	}
 
@@ -71,11 +70,10 @@ public:
 				dwExStyle, className, lpWindowName, dwStyle, x, y,
 				nWidth, nHeight, hWndParent, hMenu, GetModuleHandle( nullptr ), this
 			);
-			this->registered = true;
 		}
 		else
 		{
-			this->registered = false;
+			// Report error
 		}
 
 		return ( this->m_hwnd ? TRUE : FALSE );
@@ -93,9 +91,5 @@ protected:
 	HWND m_hwnd;
 	// Windows class for registration
 	WNDCLASS wc ={ 0 };
-
-private:
-	// Register flag for #wc
-	bool registered = false;
 };
 

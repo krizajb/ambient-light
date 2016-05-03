@@ -111,7 +111,7 @@ PLUGIN_EXPORT void Initialize( void** data, void* rm )
 
 PLUGIN_EXPORT void Finalize( void* data )
 {
-	Measure* measure = (Measure*)data;
+	Measure* measure = static_cast<Measure*>( data );
 
 	// Finally find shared pointer of measure and dereference it
 	std::list<std::shared_ptr<Measure>>::iterator it = measures.begin();
@@ -137,12 +137,15 @@ PLUGIN_EXPORT void Finalize( void* data )
 
 PLUGIN_EXPORT void Reload( void* data, void* rm, double* maxValue )
 {
+	UNUSED(data);
+	UNUSED(rm);
+
 	*maxValue = 100;
 }
 
 PLUGIN_EXPORT double Update( void* data )
 {
-	Measure* measure = (Measure*)data;
+	Measure* measure = static_cast<Measure*>( data );
 	if ( nullptr == measure ) return 0;
 
 	try
@@ -189,7 +192,7 @@ PLUGIN_EXPORT LPCWSTR GetString(void* data)
 
 PLUGIN_EXPORT void ExecuteBang( void* data, LPCWSTR args )
 {
-	Measure* measure = (Measure*)data;
+	Measure* measure = static_cast<Measure*>( data );
 	if ( nullptr == measure ) return;
 
 	std::wstring wholeBang = args;

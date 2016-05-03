@@ -143,7 +143,7 @@ bool Serial::WriteData( const char *buffer, unsigned int nbChar )
 	{
 		DWORD bytesSend;
 		// Try to write the buffer on the Serial port
-		if ( !WriteFile( this->hSerial, (void *)buffer, nbChar, &bytesSend, nullptr ) )
+		if ( !WriteFile( this->hSerial, buffer, nbChar, &bytesSend, nullptr ) )
 		{
 			// In case it don't work get comm error and return false
 			ClearCommError( this->hSerial, &this->errors, &this->status );
@@ -174,7 +174,7 @@ bool Serial::WriteData( const char *buffer )
 		SIZETToDWord( strlen( buffer ), &bytesToSend );
 
 		// Try to write the buffer on the Serial port
-		if ( !WriteFile( this->hSerial, (void *)buffer, bytesToSend, &bytesSent, nullptr ) )
+		if ( !WriteFile( this->hSerial, buffer, bytesToSend, &bytesSent, nullptr ) )
 		{
 			// In case it don't work get comm error and return false
 			ClearCommError( this->hSerial, &this->errors, &this->status );
@@ -221,7 +221,7 @@ void Serial::Reconnect( const char* portName, bool sleep )
 	this->Connect( portName, sleep );
 }
 
-void Serial::Disconnect( void )
+void Serial::Disconnect( void ) const
 {
 	//std::lock_guard<std::mutex> lock(this->mutex);
 	// Close the serial handler
