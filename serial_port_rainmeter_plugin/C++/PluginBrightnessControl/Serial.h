@@ -5,8 +5,6 @@
 
 #define ARDUINO_WAIT_TIME 2000
 
-#define RAINMETER
-
 #include <windows.h>
 #include <thread>
 #include <mutex>

@@ -13,8 +13,13 @@
   along with this program; if not, write to the Free Software
   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
+#include <string>
+#include <atlstr.h>
 
+#include "../../API/RainmeterAPI.h"
 #include "Measure.h"
+
+
 
 static std::shared_ptr<WindowsEvents> win_events( nullptr );
 
@@ -52,7 +57,7 @@ void SetBrightness( Measure* const measure, int value, int offset = 0 )
 
 		{
 			measure->brightness_value = brightness;
-			measure->isOn = true;
+			measure->SetLedStatus(true);
 		}
 
 		std::string str = std::to_string( measure->brightness_value ) + Comma;
@@ -155,8 +160,15 @@ PLUGIN_EXPORT double Update( void* data )
 		{
 			if ( !measure->serial->IsConnected() )
 			{
-				RmLog( LOG_WARNING, L"BrightnessControl.dll: Serial connection closed! Reconnecting ..." );
+				//measure->status = DEVICE_OFF;
+				measure->SetDeviceStatus( false );
+				//RmLog( LOG_WARNING, L"BrightnessControl.dll: Serial connection closed! Reconnecting ..." );
 				measure->serial->Reconnect( true );
+			}
+			else
+			{
+				//measure->status = DEVICE_ON;
+				measure->SetDeviceStatus( true );
 			}
 		}
 	}
@@ -168,10 +180,17 @@ PLUGIN_EXPORT double Update( void* data )
 
 	double value = 0.0;
 	{
-		if ( measure->isOn )
+		if ( !measure->IsDeviceOn() )
+		{
+			// This is still rounded to 0% which makes it possible to detect device offline
+			// by skin so one can disable controls etc
+			value = OFF;
+		}
+		else if ( measure->IsLedOn() )
 		{
 			value =  ( measure->brightness_value / double( MAX ) ) * 100.0;
 		}
+
 	}
 
 	return value;

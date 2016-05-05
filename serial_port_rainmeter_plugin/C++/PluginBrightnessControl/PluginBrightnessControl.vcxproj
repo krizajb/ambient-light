@@ -22,6 +22,7 @@
     <ResourceCompile Include="PluginBrightnessControl.rc" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Measure.cpp" />
     <ClCompile Include="PluginBrightnessControl.cpp" />
     <ClCompile Include="Serial.cpp" />
     <ClCompile Include="WindowsEvents.cpp" />
