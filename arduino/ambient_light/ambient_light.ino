@@ -75,7 +75,10 @@ void setup()
   log("Is on: "+String( isOn ));
 
 // set initial brightness
-  setBrightness( brightness ); 
+  if ( isOn )
+  {
+    turnOn();
+  }
 }
 
 // sets brightness and stores value to eprom
