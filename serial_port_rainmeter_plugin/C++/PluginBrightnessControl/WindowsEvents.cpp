@@ -31,11 +31,14 @@ void Window::Notify( const bool value ) const
 
 LRESULT Window::HandleMessage( UINT uMsg, WPARAM wParam, LPARAM lParam )
 {
+	CString report;
+	report.Format( L"uMsg '%d' wParam '%llu' lParam '%llu'", uMsg, wParam, lParam );
+	RmLog( LOG_DEBUG, report );
+
+	// Handle sleep events
 	if ( uMsg == WM_POWERBROADCAST )
 	{
-		CString report;
 		report.Format( L"WM_POWERBROADCAST wParam '%llu' lParam '%llu'", wParam, lParam );
-
 		RmLog( LOG_DEBUG, report );
 
 		// Resumed from suspend (sleep) state
@@ -60,8 +63,28 @@ LRESULT Window::HandleMessage( UINT uMsg, WPARAM wParam, LPARAM lParam )
 			this->Notify( true );
 		}
 	}
+	// Handle shut down events
+	else if ( WM_ENDSESSION == uMsg )
+	{
+		report.Format( L"WM_ENDSESSION wParam '%llu' lParam '%llu'", wParam, lParam );
+		RmLog( LOG_DEBUG, report );
 
-	return TRUE;//DefWindowProc( this->WindowHandle(), uMsg, wParam, lParam );
+		if ( ENDSESSION_LOGOFF == lParam)
+		{
+			report.Format(L"User is logging off");
+			RmLog( LOG_DEBUG, report );
+		}
+
+		this->Notify( true );
+	}
+	else if ( WM_QUERYENDSESSION == uMsg)
+	{
+		report.Format( L"WM_QUERYENDSESSION wParam '%llu' lParam '%llu'", wParam, lParam );
+		RmLog( LOG_DEBUG, report );
+		
+	}
+
+	return DefWindowProc( this->WindowHandle(), uMsg, wParam, lParam );
 }
 
 unsigned int WindowsEvents::user_idle_time = 2000000;
@@ -109,6 +132,9 @@ void WindowsEvents::SleepMain( void )
 
 	if ( !this->hidden_window->Create( _T( "Hidden" ), 0, 0, 0, 0, 0, NULL, nullptr, nullptr ) )
 	{
+		CString report;
+		report.Format(L"%s", this->hidden_window->Error() );
+		RmLog(LOG_ERROR, report);
 		return;
 	}
 

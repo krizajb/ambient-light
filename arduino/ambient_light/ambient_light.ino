@@ -73,12 +73,6 @@ void setup()
   
   isOn = EEPROM.read( EPROMS );
   log("Is on: "+String( isOn ));
-
-// set initial brightness
-  if ( isOn )
-  {
-    turnOn();
-  }
 }
 
 // sets brightness and stores value to eprom
@@ -216,6 +210,11 @@ void serialEvent()
     String init = String( isEnabled() )+String( brightness )+Comma;
     Serial.print( init );
     Serial.flush();
+
+    if ( isOn )
+    {
+      turnOn();
+    }
     
     sBuffer[sBufferPos-1] = 0;
     sBufferPos = sBufferPos-1;

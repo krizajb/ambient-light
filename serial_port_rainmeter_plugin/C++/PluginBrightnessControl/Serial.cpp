@@ -8,14 +8,16 @@
   #include "../../API/RainmeterAPI.h"
 #endif
 
-Serial::Serial( const char *portName )
-	: port (portName)
+Serial::Serial( const char *portName, bool sleepOnConnect, std::atomic<bool> &report )
+	: port( portName )
+	, report( report )
 {
-	this->Connect( portName, true );
+	this->Connect( portName, sleepOnConnect );
 	readThread = std::thread( &Serial::ReadDataMain, this );
 }
 
-Serial::Serial( void )
+Serial::Serial( std::atomic<bool> &report )
+	: report(report)
 {
 	readThread = std::thread( &Serial::ReadDataMain, this );
 }
@@ -165,9 +167,13 @@ bool Serial::WriteData( const char *buffer )
 	}
 	else
 	{
-		CString report;
-		report.Format(L"Sending '%hs' to '%hs'", buffer, this->port.c_str());
-		RmLog(LOG_DEBUG, report );
+		CString report_msg;
+
+		if ( this->report )
+		{
+			report_msg.Format( L"Sending '%hs' to '%hs'", buffer, this->port.c_str() );
+			RmLog( LOG_DEBUG, report_msg );
+		}
 
 		DWORD bytesSent;
 		DWORD bytesToSend;
@@ -238,9 +244,12 @@ void Serial::Connect( const char* portName, bool sleep )
 
 #ifdef RAINMETER
 	// Report string
-	CString report;
-	report.Format( L"Connecting to '%hs' ...", portName );
-	RmLog( LOG_DEBUG, report );
+	CString report_msg;
+	if ( this->report )
+	{
+		report_msg.Format( L"Connecting to '%hs' ...", portName );
+		RmLog( LOG_DEBUG, report_msg );
+	}
 #endif
 	printf( "Connecting to '%s' ...", portName );
 
@@ -262,31 +271,28 @@ void Serial::Connect( const char* portName, bool sleep )
 		if ( GetLastError() == ERROR_FILE_NOT_FOUND )
 		{
 #ifdef RAINMETER
-			report.FormatMessage( L"'%s' Handle was not attached. Reason not available.", portName );
-			RmLog( LOG_ERROR, report );
+			if ( this->report )
+			{
+				report_msg.FormatMessage( L"'%s' Handle was not attached. Reason not available.", portName );
+				RmLog( LOG_ERROR, report_msg );
+			}
 #endif
 			printf( "ERROR: '%s' Handle was not attached.Reason not available.", portName );
 		}
 		else
 		{
 #ifdef RAINMETER
-			report.FormatMessage( L"Handle was not attached." );
-			RmLog( LOG_ERROR, report );
+			if ( this->report )
+			{
+				report_msg.FormatMessage( L"Handle was not attached." );
+				RmLog( LOG_ERROR, report_msg );
+			}
 #endif
 			printf( "ERROR: '%s' Handle was not attached.", portName );
 		}
 	}
 	else
 	{
-		COMMTIMEOUTS timeout ={ 0 };
-
-		timeout.ReadIntervalTimeout = 50;
-		timeout.ReadTotalTimeoutConstant = 50;
-		timeout.ReadTotalTimeoutMultiplier = 10;
-		timeout.WriteTotalTimeoutConstant = 50;
-		timeout.WriteTotalTimeoutMultiplier = 10;
-
-
 		//If connected we try to set the comm parameters
 		DCB dcbSerialParams ={ 0 };
 
@@ -295,8 +301,8 @@ void Serial::Connect( const char* portName, bool sleep )
 		{
 			//If impossible, show an error
 #ifdef RAINMETER
-			report.FormatMessage( L"Failed to get '%hs' current serial parameters!", portName );
-			RmLog( LOG_WARNING, report );
+			report_msg.FormatMessage( L"Failed to get '%hs' current serial parameters!", portName );
+			RmLog( LOG_WARNING, report_msg );
 #endif
 			printf( "Failed to get current '%s' serial parameters!", portName );
 		}
@@ -311,24 +317,22 @@ void Serial::Connect( const char* portName, bool sleep )
 			//reset upon establishing a connection
 			//dcbSerialParams.fDtrControl = DTR_CONTROL_ENABLE;
 			dcbSerialParams.fDtrControl = DTR_CONTROL_DISABLE;	// Disabled tmp?
+			dcbSerialParams.fRtsControl = RTS_CONTROL_DISABLE;	// Disabled tmp?
 
 			//Set the parameters and check for their proper application
 			if ( !SetCommState( this->hSerial, &dcbSerialParams ) )
 			{
 #ifdef RAINMETER
-				report.FormatMessage( L"Could not set '%hs' serial parameters", portName );
-				RmLog( LOG_NOTICE, report );
+				report_msg.FormatMessage( L"Could not set '%hs' serial parameters", portName );
+				RmLog( LOG_NOTICE, report_msg );
 #endif
 				printf( "Could not set '%s' serial parameters", portName );
 			}
 			else
 			{
-				SetCommTimeouts( this->hSerial, &timeout );
-				//If everything went fine we're connected
-
 #ifdef RAINMETER
-				report.Format( L"Connected to '%hs' ...", portName );
-				RmLog( LOG_DEBUG, report );
+				report_msg.Format( L"Connected to '%hs' ...", portName );
+				RmLog( LOG_DEBUG, report_msg );
 #endif
 				printf( "Connected to '%hs' ...", portName );
 				//Flush any remaining characters in the buffers 
@@ -336,7 +340,7 @@ void Serial::Connect( const char* portName, bool sleep )
 				if ( sleep )
 				{
 					//We wait 2s as the Arduino board will be reseting
-					Sleep( ARDUINO_WAIT_TIME + 1000 );
+					Sleep( ARDUINO_WAIT_TIME );
 				}
 			}
 		}

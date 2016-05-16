@@ -20,6 +20,8 @@ public:
 	std::atomic<int> brightness_value = NOT_SET_INT;
 	// Measure init flag
 	std::atomic<bool> init = true;
+	// Reporting flag
+	std::atomic<bool> report = true;
 
 	// This is here just for reference counting
 	std::shared_ptr<WindowsEvents> win_events;

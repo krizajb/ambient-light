@@ -15,6 +15,7 @@
 */
 #include <string>
 #include <atlstr.h>
+#include <stdlib.h>  
 
 #include "../../API/RainmeterAPI.h"
 #include "Measure.h"
@@ -26,6 +27,8 @@ static std::shared_ptr<WindowsEvents> win_events( nullptr );
 // Added since rainmeter doesn't support smart pointer, never delete raw data* pointer
 // Setting rainmeter is owner of Measure instance
 std::list<std::shared_ptr<Measure>> measures;
+
+static bool init = true;
 
 
 /* Sets brightness value if offset isn't set, offset changes currently set brightness value by the offset.
@@ -97,12 +100,15 @@ PLUGIN_EXPORT void Initialize( void** data, void* rm )
 	win_events->RegisterMeasure( measure );
 
 	// Allow controller to properly setup - this is 3sec blocking
-	std::shared_ptr<Serial> serial = std::make_shared<Serial>( port.c_str() );
+	// Todo: Analyze why serial needs to wait 3s on startup
+	// If needed add separated startup thread if possible
+	std::shared_ptr<Serial> serial = std::make_shared<Serial>( port.c_str(), true, measure->report );
 	serial->SetMeasure( measure );
 
 	// Send initialization to controller
 	if ( !serial->WriteData( &Init, 1 ) )
 	{
+		// Todo: Gather serial error report
 		CString report;
 		report.Format( L"BrightnessControl.dll: Unable to send initialization data to '%hs', error '%lu'", port.c_str(), serial->Error() );
 		RmLog( LOG_ERROR, report );
@@ -160,15 +166,21 @@ PLUGIN_EXPORT double Update( void* data )
 		{
 			if ( !measure->serial->IsConnected() )
 			{
-				//measure->status = DEVICE_OFF;
+				if ( measure->report )
+				{
+					// To avoid spam, notify only on start
+					RmLog( LOG_WARNING, L"BrightnessControl.dll: Serial connection closed! Reconnecting ..." );
+					measure->report = false;
+				}
+
 				measure->SetDeviceStatus( false );
-				//RmLog( LOG_WARNING, L"BrightnessControl.dll: Serial connection closed! Reconnecting ..." );
 				measure->serial->Reconnect( true );
+				measure->serial->WriteData( &On, 1 );
 			}
 			else
 			{
-				//measure->status = DEVICE_ON;
 				measure->SetDeviceStatus( true );
+				measure->report = true;
 			}
 		}
 	}

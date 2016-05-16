@@ -70,10 +70,14 @@ public:
 				dwExStyle, className, lpWindowName, dwStyle, x, y,
 				nWidth, nHeight, hWndParent, hMenu, GetModuleHandle( nullptr ), this
 			);
+			if ( nullptr == this->m_hwnd )
+			{
+				this->error = GetLastError();
+			}
 		}
 		else
 		{
-			// Report error
+			this->error = GetLastError();
 		}
 
 		return ( this->m_hwnd ? TRUE : FALSE );
@@ -84,12 +88,21 @@ public:
 		return this->m_hwnd;
 	}
 
+	DWORD Error( void ) const
+	{
+		return this->error;
+	}
+
 protected:
 	virtual PCWSTR  ClassName( void ) const = 0;
 	virtual LRESULT HandleMessage( UINT uMsg, WPARAM wParam, LPARAM lParam ) = 0;
 
+	// Window handle used for (un)registration
 	HWND m_hwnd;
 	// Windows class for registration
 	WNDCLASS wc ={ 0 };
+
+private:
+	DWORD error;
 };
 

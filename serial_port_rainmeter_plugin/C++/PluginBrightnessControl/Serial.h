@@ -8,6 +8,7 @@
 #include <windows.h>
 #include <thread>
 #include <mutex>
+#include <atomic>
 
 
 struct Measure;
@@ -36,15 +37,18 @@ private:
 	// Measure used for notification
 	std::weak_ptr<Measure> measure;
 
+	// Report flag
+	std::atomic<bool> &report;
+
 	// Protects all Serial members (just to be 100% sure)
 	//std::mutex mutex;
 
 public:
 	// Initialize Serial communication with the given COM port
-	Serial( const char *portName );
+	Serial( const char *portName, bool sleepOnConnect, std::atomic<bool> &report );
 
 	// Initialize Serial communication
-	Serial( void );
+	Serial( std::atomic<bool> &report );
 
 	// Close the connection
 	~Serial();

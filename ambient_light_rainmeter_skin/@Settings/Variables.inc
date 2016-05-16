@@ -1,0 +1,13 @@
+[Variables]
+ UserIdle=60000
+ VolumeIncrement=5
+ SBWIDTH=264
+ BARWIDTH=260
+ Font=Open Sans Light
+ FS1=8
+ FS2=16
+ BarUsed=255,255,255,255
+ BarTotal=225,225,225,55
+ FCN=255,255,255,255
+ FCT=D0C537
+ FCND=255,255,255,55
