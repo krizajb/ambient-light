@@ -54,7 +54,7 @@ private:
 	// Exit point of activityThread and sleepThread
 	bool exit = false;
 
-	// User idle time allowed
+	// User idle time allowed in milliseconds 
 	static unsigned int user_idle_time;	// 20 minutes
 
 	// List of registered event listeners

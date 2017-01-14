@@ -87,7 +87,7 @@ LRESULT Window::HandleMessage( UINT uMsg, WPARAM wParam, LPARAM lParam )
 	return DefWindowProc( this->WindowHandle(), uMsg, wParam, lParam );
 }
 
-unsigned int WindowsEvents::user_idle_time = 2000000;
+unsigned int WindowsEvents::user_idle_time = 1200000;
 
 WindowsEvents::WindowsEvents()
 {
