@@ -101,7 +101,7 @@ void Serial::ReadDataMain( void )
 		//Check if there is something to read
 		if ( this->status.cbInQue > 0 )
 		{
-			//If there is we check if there is enough data to read the required number
+			//If there is, check if there is enough data to read the required number
 			//of characters, if not we'll read only the available characters to prevent
 			//locking of the application.
 			if ( this->status.cbInQue > nbChar )
@@ -121,6 +121,7 @@ void Serial::ReadDataMain( void )
 				{
 					// Forward buffer to handler
 					locked_measure->SerialEventHandler( buffer );
+					this->exit = true;
 				}
 			}
 			memset( buffer, 0, sizeof( buffer ) );
