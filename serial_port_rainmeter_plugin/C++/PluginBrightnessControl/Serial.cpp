@@ -82,7 +82,7 @@ void Serial::ReadDataMain( void )
 	//Number of bytes we'll have read
 	DWORD bytesRead;
 	//Number of bytes we'll really ask to read
-	unsigned int toRead;
+	DWORD toRead;
 
 	memset( buffer, 0, sizeof( buffer ) );
 
@@ -95,37 +95,17 @@ void Serial::ReadDataMain( void )
 	{
 		//std::lock_guard<std::mutex> lock( this->mutex );
 
-		//Use the ClearCommError function to get status info on the Serial port
-		ClearCommError( this->hSerial, &this->errors, &this->status );
-
-		//Check if there is something to read
-		if ( this->status.cbInQue > 0 )
+		//Try to read the require number of chars, and return the number of read bytes on success
+		if (ReadFile(this->hSerial, buffer, sizeof(buffer), &bytesRead, nullptr))
 		{
-			//If there is, check if there is enough data to read the required number
-			//of characters, if not we'll read only the available characters to prevent
-			//locking of the application.
-			if ( this->status.cbInQue > nbChar )
+			std::shared_ptr<Measure> locked_measure = measure.lock();
+			if (nullptr != locked_measure)
 			{
-				toRead = nbChar;
+				// Forward buffer to handler
+				locked_measure->SerialEventHandler(buffer);
 			}
-			else
-			{
-				toRead = this->status.cbInQue;
-			}
-
-			//Try to read the require number of chars, and return the number of read bytes on success
-			if ( ReadFile( this->hSerial, buffer, toRead, &bytesRead, nullptr ) )
-			{
-				std::shared_ptr<Measure> locked_measure = measure.lock();
-				if ( nullptr != locked_measure )
-				{
-					// Forward buffer to handler
-					locked_measure->SerialEventHandler( buffer );
-					this->exit = true;
-				}
-			}
-			memset( buffer, 0, sizeof( buffer ) );
 		}
+		memset(buffer, 0, sizeof(buffer));
 	}
 
 	// Clear buffer
@@ -338,6 +318,23 @@ void Serial::Connect( const char* portName, bool sleep )
 				printf( "Connected to '%hs' ...", portName );
 				//Flush any remaining characters in the buffers 
 				PurgeComm( this->hSerial, PURGE_RXCLEAR | PURGE_TXCLEAR );
+
+
+				COMMTIMEOUTS timeouts;
+
+				timeouts.ReadIntervalTimeout = 1;
+				timeouts.ReadTotalTimeoutMultiplier = 1;
+				timeouts.ReadTotalTimeoutConstant = 1;
+				timeouts.WriteTotalTimeoutMultiplier = 1;
+				timeouts.WriteTotalTimeoutConstant = 1;
+
+				if (!SetCommTimeouts(this->hSerial, &timeouts))
+				{
+#ifdef RAINMETER
+					report_msg.FormatMessage(L"Could not set timeout serial parameters");
+					RmLog(LOG_NOTICE, report_msg);
+#endif
+				}
 				if ( sleep )
 				{
 					//We wait 2s as the Arduino board will be reseting
