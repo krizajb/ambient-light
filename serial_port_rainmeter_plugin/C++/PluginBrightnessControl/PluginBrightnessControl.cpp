@@ -51,6 +51,11 @@ void SetBrightness( Measure* const measure, int value, int offset = 0 )
 		if ( brightness < 5 )
 		{
 			brightness = MIN;
+			measure->SetLedStatus(false);
+		}
+		else
+		{
+			measure->SetLedStatus(true);
 		}
 
 		if ( brightness > 250 )
@@ -60,7 +65,7 @@ void SetBrightness( Measure* const measure, int value, int offset = 0 )
 
 		{
 			measure->brightness_value = brightness;
-			measure->SetLedStatus(true);
+			
 		}
 
 		std::string str = std::to_string( measure->brightness_value ) + Comma;
