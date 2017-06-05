@@ -25,8 +25,6 @@ const double OFF = 0.0112;
 enum Status
 {
 	UNDEFINED	= ( 1u << 0 ),	// Status undefined
-	LED_OFF		= ( 1u << 1 ),	// Led strip is turned off 
-	LED_ON		= ( 1u << 2 ),	// Led strip is turned on 
-	DEVICE_OFF	= ( 1u << 3 ),	// Device is turned off 
-	DEVICE_ON	= ( 1u << 4 ),	// Device is turned on 
+	LED_ON		= ( 1u << 1 ),	// Led strip is turned on 
+	DEVICE_ON	= ( 1u << 2 ),	// Device is turned on 
 };
