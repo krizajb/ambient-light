@@ -11,31 +11,31 @@
 Serial::Serial( const char *portName, bool sleepOnConnect, std::atomic<bool> &report )
 	: port( portName )
 	, report( report )
+	, mode( CONNECTING )
 {
-	this->Connect( portName, sleepOnConnect );
-	readThread = std::thread( &Serial::ReadDataMain, this );
+	this->mainThread = std::thread( &Serial::SerialMain, this );
 }
 
 Serial::Serial( std::atomic<bool> &report )
-	: report(report)
+	: report( report )
+	, mode( CONNECTING )
 {
-	readThread = std::thread( &Serial::ReadDataMain, this );
+	this->mainThread = std::thread( &Serial::SerialMain, this );
 }
 
 Serial::~Serial()
 {
 	this->exit = true;
-
-	if ( this->readThread.joinable() )
+	if ( this->mainThread.joinable() )
 	{
-		this->readThread.join();
+		this->mainThread.join();
 	}
 
 	this->Disconnect();
 	this->hSerial = INVALID_HANDLE_VALUE;
 }
 
-int Serial::ReadData( char *buffer, unsigned int nbChar )
+int Serial::ReadData( char *buffer, unsigned long nbChar )
 {
 	//Number of bytes we'll have read
 	DWORD bytesRead;
@@ -74,35 +74,29 @@ int Serial::ReadData( char *buffer, unsigned int nbChar )
 	return 0;
 }
 
-void Serial::ReadDataMain( void )
+void Serial::ReadData( void ) const
 {
 	char *buffer = new char[32];
-	unsigned int nbChar = sizeof( buffer );
+	unsigned int nbChar = sizeof(buffer);
 
 	//Number of bytes we'll have read
 	DWORD bytesRead;
-	//Number of bytes we'll really ask to read
-	DWORD toRead;
 
-	memset( buffer, 0, sizeof( buffer ) );
+	memset(buffer, 0, sizeof(buffer));
 
-#ifdef RAINMETER
-	RmLog( LOG_DEBUG, L"Starting read data main ..." );
-#endif
-	printf( "Starting read data main ..." );
-
-	while ( !exit )
+	if (this->hSerial != INVALID_HANDLE_VALUE)
 	{
-		//std::lock_guard<std::mutex> lock( this->mutex );
-
 		//Try to read the require number of chars, and return the number of read bytes on success
 		if (ReadFile(this->hSerial, buffer, sizeof(buffer), &bytesRead, nullptr))
 		{
-			std::shared_ptr<Measure> locked_measure = measure.lock();
-			if (nullptr != locked_measure)
+			if (bytesRead != 0)
 			{
-				// Forward buffer to handler
-				locked_measure->SerialEventHandler(buffer);
+				std::shared_ptr<ISerialHandler> locked_handler = handler.lock();
+				if (nullptr != locked_handler)
+				{
+					// Forward buffer to handler
+					locked_handler->HandleData(buffer);
+				}
 			}
 		}
 		memset(buffer, 0, sizeof(buffer));
@@ -112,11 +106,29 @@ void Serial::ReadDataMain( void )
 	delete[] buffer;
 }
 
+void Serial::Send(std::string buffer, unsigned long nbChar)
+{
+	std::lock_guard<std::mutex> lock(this->mutex);
 
-bool Serial::WriteData( const char *buffer, unsigned int nbChar )
+	std::shared_ptr<Message> message(new Message(buffer, nbChar));
+	this->sendQueue.push(message);
+}
+
+void Serial::Send(std::string buffer)
+{
+	std::lock_guard<std::mutex> lock(this->mutex);
+
+	DWORD bytesToSend;
+	SIZETToDWord(strlen(buffer.c_str()), &bytesToSend);
+
+	std::shared_ptr<Message> message(new Message(buffer, bytesToSend));
+	this->sendQueue.push(message);
+}
+
+
+bool Serial::WriteData( const char *buffer, unsigned long nbChar )
 {
 	bool returnValue = true;
-	//std::lock_guard<std::mutex> lock( this->mutex );
 
 	if ( this->hSerial == nullptr )
 	{
@@ -124,13 +136,23 @@ bool Serial::WriteData( const char *buffer, unsigned int nbChar )
 	}
 	else
 	{
-		DWORD bytesSend;
-		// Try to write the buffer on the Serial port
-		if ( !WriteFile( this->hSerial, buffer, nbChar, &bytesSend, nullptr ) )
+		if (this->hSerial != INVALID_HANDLE_VALUE)
 		{
-			// In case it don't work get comm error and return false
-			ClearCommError( this->hSerial, &this->errors, &this->status );
-			returnValue = false;
+			if (this->report)
+			{
+				CString report_msg;
+				report_msg.Format( L"Sending '%hs' to '%hs'", buffer, this->port.c_str() );
+				RmLog(LOG_DEBUG, report_msg);
+			}
+
+			DWORD bytesSend;
+			// Try to write the buffer on the Serial port
+			if (!WriteFile(this->hSerial, buffer, nbChar, &bytesSend, nullptr))
+			{
+				// In case it don't work get comm error and return false
+				ClearCommError(this->hSerial, &this->errors, &this->status);
+				returnValue = false;
+			}
 		}
 	}
 
@@ -146,12 +168,15 @@ bool Serial::WriteData( const char *buffer )
 	{
 		returnValue = false;
 	}
+	else if (this->hSerial == INVALID_HANDLE_VALUE)
+	{
+		returnValue = false;
+	}
 	else
 	{
-		CString report_msg;
-
 		if ( this->report )
 		{
+			CString report_msg;
 			report_msg.Format( L"Sending '%hs' to '%hs'", buffer, this->port.c_str() );
 			RmLog( LOG_DEBUG, report_msg );
 		}
@@ -170,6 +195,25 @@ bool Serial::WriteData( const char *buffer )
 	}
 
 	return returnValue;
+}
+
+Serial::Mode Serial::Status(void)
+{
+	std::lock_guard<std::mutex> lock(this->mutex);
+	return this->mode;
+}
+
+void Serial::Update( void )
+{
+	std::lock_guard<std::mutex> lock(this->mutex);
+	if ( !this->IsConnected() )
+	{
+		this->mode = CONNECTING;
+	}
+	else
+	{
+		this->mode = CONNECTED;
+	}
 }
 
 bool Serial::IsConnected( void )
@@ -215,6 +259,43 @@ void Serial::Disconnect( void ) const
 	CloseHandle( this->hSerial );
 }
 
+void Serial::SerialMain(void)
+{
+	//std::unique_lock<std::mutex> lock(this->mutex);
+
+	while (!this->exit)
+	{
+		// Update status
+		this->Update();
+
+		// Reconnect if necessary
+		if (CONNECTING == mode)
+		{
+			this->Reconnect(true);
+			std::this_thread::sleep_for(std::chrono::milliseconds(500));
+		}
+		else
+		{
+			// Handle Read/Write data
+			if ( !this->sendQueue.empty() )
+			{
+				std::shared_ptr<Message> msg = this->sendQueue.front();
+				if ( this->WriteData(msg->buffer.c_str(), msg->nbChar) )
+				{
+					this->sendQueue.pop();
+				}
+				else
+				{
+					std::this_thread::sleep_for(std::chrono::milliseconds(500));
+				}
+			}
+			this->ReadData();
+		}
+
+		//std::this_thread::sleep_for(std::chrono::milliseconds(100));
+	}
+}
+
 void Serial::Connect( const char* portName, bool sleep )
 {
 	wchar_t port[20];
@@ -233,6 +314,10 @@ void Serial::Connect( const char* portName, bool sleep )
 	}
 #endif
 	printf( "Connecting to '%s' ...", portName );
+
+	size_t t_id = std::hash<std::thread::id>()(std::this_thread::get_id());
+	report_msg.Format(L"Connect Thread ID '%llu' ...", t_id);
+	RmLog(LOG_NOTICE, report_msg);
 
 	//std::lock_guard<std::mutex> lock( this->mutex );
 
@@ -275,7 +360,7 @@ void Serial::Connect( const char* portName, bool sleep )
 	else
 	{
 		//If connected we try to set the comm parameters
-		DCB dcbSerialParams ={ 0 };
+		DCB dcbSerialParams = { 0 };
 
 		//Try to get the current
 		if ( !GetCommState( this->hSerial, &dcbSerialParams ) )
@@ -290,10 +375,10 @@ void Serial::Connect( const char* portName, bool sleep )
 		else
 		{
 			//Define serial connection parameters for the Arduino board
-			dcbSerialParams.BaudRate=CBR_9600;
-			dcbSerialParams.ByteSize=8;
-			dcbSerialParams.StopBits=ONESTOPBIT;
-			dcbSerialParams.Parity=NOPARITY;
+			dcbSerialParams.BaudRate = CBR_9600;
+			dcbSerialParams.ByteSize = 8;
+			dcbSerialParams.StopBits = ONESTOPBIT;
+			dcbSerialParams.Parity = NOPARITY;
 			//Setting the DTR to Control_Enable ensures that the Arduino is properly
 			//reset upon establishing a connection
 			//dcbSerialParams.fDtrControl = DTR_CONTROL_ENABLE;
@@ -311,43 +396,48 @@ void Serial::Connect( const char* portName, bool sleep )
 			}
 			else
 			{
-#ifdef RAINMETER
-				report_msg.Format( L"Connected to '%hs' ...", portName );
-				RmLog( LOG_DEBUG, report_msg );
-#endif
-				printf( "Connected to '%hs' ...", portName );
 				//Flush any remaining characters in the buffers 
 				PurgeComm( this->hSerial, PURGE_RXCLEAR | PURGE_TXCLEAR );
 
-
+				this->mode = CONNECTED;
+					
 				COMMTIMEOUTS timeouts;
-
 				timeouts.ReadIntervalTimeout = 1;
 				timeouts.ReadTotalTimeoutMultiplier = 1;
 				timeouts.ReadTotalTimeoutConstant = 1;
 				timeouts.WriteTotalTimeoutMultiplier = 1;
 				timeouts.WriteTotalTimeoutConstant = 1;
 
+				//Set timeouts and check for their proper application
 				if (!SetCommTimeouts(this->hSerial, &timeouts))
 				{
 #ifdef RAINMETER
-					report_msg.FormatMessage(L"Could not set timeout serial parameters");
-					RmLog(LOG_NOTICE, report_msg);
+					report_msg.FormatMessage(L"Could not set timeout '%hs' serial parameters", portName);
+					RmLog(LOG_WARNING, report_msg);
 #endif
 				}
 				if ( sleep )
 				{
 					//We wait 2s as the Arduino board will be reseting
-					Sleep( ARDUINO_WAIT_TIME );
+					std::this_thread::sleep_for(std::chrono::milliseconds(ARDUINO_WAIT_TIME));
 				}
+
+				std::shared_ptr<ISerialHandler> locked_handler = handler.lock();
+				locked_handler->HandleStatus( On );
+
+#ifdef RAINMETER
+				report_msg.Format(L"Connected to '%hs' ...", portName);
+				RmLog(LOG_DEBUG, report_msg);
+#endif
+				printf("Connected to '%hs' ...", portName);
 			}
 		}
 	}
 }
 
-void Serial::SetMeasure( std::weak_ptr<Measure> measure )
+void Serial::SetHandler( std::weak_ptr<ISerialHandler> handler )
 {
-	this->measure = measure;
+	this->handler = handler;
 }
 
 void Serial::SetPort( const char* portName )

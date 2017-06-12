@@ -10,11 +10,11 @@
 const int NOT_SET_INT = -1;
 
 // Serial communication parameters
-const char Init( 'I' );
-const char Share( 'S' );
-const char Comma( ',' );
-const char On( 'n' );
-const char Off( 'f' );
+const char Init( 'I' );		// Intialize device
+const char Share( 'S' );	// Shared message between devices
+const char Comma( ',' );	// Message delimiter
+const char On( 'n' );		// Turn device ON
+const char Off( 'f' );		// Turn device OFF
 
 // Brightness values
 const int MIN = 0;
@@ -26,5 +26,5 @@ enum Status
 {
 	UNDEFINED	= ( 1u << 0 ),	// Status undefined
 	LED_ON		= ( 1u << 1 ),	// Led strip is turned on 
-	DEVICE_ON	= ( 1u << 2 ),	// Device is turned on 
+	DEVICE_ON	= ( 1u << 2 ),	// Device is turned on - connected 
 };

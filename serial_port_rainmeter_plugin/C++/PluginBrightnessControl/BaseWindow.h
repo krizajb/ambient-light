@@ -100,7 +100,7 @@ protected:
 	// Window handle used for (un)registration
 	HWND m_hwnd;
 	// Windows class for registration
-	WNDCLASS wc ={ 0 };
+	WNDCLASS wc = { 0 };
 
 private:
 	DWORD error;

@@ -28,9 +28,6 @@ static std::shared_ptr<WindowsEvents> win_events( nullptr );
 // Setting rainmeter is owner of Measure instance
 std::list<std::shared_ptr<Measure>> measures;
 
-static bool init = true;
-
-
 /* Sets brightness value if offset isn't set, offset changes currently set brightness value by the offset.
  * Brightness value must be in MIN, MAX range.
  */
@@ -70,13 +67,15 @@ void SetBrightness( Measure* const measure, int value, int offset = 0 )
 
 		std::string str = std::to_string( measure->brightness_value ) + Comma;
 
-		if ( nullptr != measure->serial && !measure->serial->WriteData( str.c_str() ) )
+		if ( nullptr == measure->serial )
 		{
-			report.Format( L"BrightnessControl.dll: Enable to write data to '%hs' port.", measure->serial->Port().c_str() );
+			report.Format( L"BrightnessControl.dll: Enable to write data '%hs' to '%hs' port.", str.c_str(), measure->serial->Port().c_str());
 			RmLog( LOG_ERROR, report );
 		}
 		else
 		{
+			measure->serial->Send( str );
+
 			report.Format( L"BrightnessControl.dll: Changing brightness value '%d'", measure->brightness_value );
 			RmLog( LOG_DEBUG, report );
 		}
@@ -91,6 +90,9 @@ void SetBrightness( Measure* const measure, int value, int offset = 0 )
 PLUGIN_EXPORT void Initialize( void** data, void* rm )
 {
 	std::shared_ptr<Measure> measure = std::make_shared<Measure>();
+	// not sure if any od this is OK since in the end we return raw pointer
+	//std::atomic<std::shared_ptr<Measure>> measure1 = std::make_shared<Measure>();
+	//measure1.load()->init = false;
 	measures.push_back( measure );
 
 	std::string port = CW2A( RmReadString( rm, L"Port", L"COM8", false ) );
@@ -104,20 +106,15 @@ PLUGIN_EXPORT void Initialize( void** data, void* rm )
 	}
 	win_events->RegisterMeasure( measure );
 
-	// Allow controller to properly setup - this is 3sec blocking
-	// Todo: Analyze why serial needs to wait 3s on startup
-	// If needed add separated startup thread if possible
+	// Allow controller to properly setup
 	std::shared_ptr<Serial> serial = std::make_shared<Serial>( port.c_str(), true, measure->report );
-	serial->SetMeasure( measure );
+	serial->SetHandler( measure );
 
 	// Send initialization to controller
-	if ( !serial->WriteData( &Init, 1 ) )
-	{
-		// Todo: Gather serial error report
-		CString report;
-		report.Format( L"BrightnessControl.dll: Unable to send initialization data to '%hs', error '%lu'", port.c_str(), serial->Error() );
-		RmLog( LOG_ERROR, report );
-	}
+	std::string msg( &Init, 1 );
+	serial->Send( msg );
+	measure->init = true;
+	measure->started = false;
 
 	measure->serial = serial;
 	measure->win_events = win_events;
@@ -145,7 +142,7 @@ PLUGIN_EXPORT void Finalize( void* data )
 	}
 
 	// No one is using win_events, destroy it
-	if (win_events.use_count() == 1)
+	if ( win_events.use_count() == 1 )
 	{
 		win_events.reset();
 	}
@@ -166,27 +163,34 @@ PLUGIN_EXPORT double Update( void* data )
 
 	try
 	{
-		// Auto reconnect, this should happen if monitor ie usb is turned off
+/*		// Wait for connection  
+		if (measure->init)
+		{
+			Sleep(500);
+			measure->init = false;
+		}*/
+
+		// Auto reconnect, this should happen if screen ie usb is turned off
 		if ( nullptr != measure->serial )
 		{
-			if ( !measure->serial->IsConnected() )
+			if ( measure->serial->Status() != Serial::CONNECTED)
 			{
-				if ( measure->report )
+				measure->SetDeviceStatus( false );
+				if (measure->report)
 				{
 					// To avoid spam, notify only on start
-					RmLog( LOG_WARNING, L"BrightnessControl.dll: Serial connection closed! Reconnecting ..." );
+					RmLog(LOG_WARNING, L"BrightnessControl.dll: Serial connection closed! Reconnecting ...");
 					measure->report = false;
 				}
 
-				measure->SetDeviceStatus( false );
-				measure->serial->Reconnect( true );
-				measure->serial->WriteData( &On, 1 );
 			}
 			else
 			{
 				measure->SetDeviceStatus( true );
 				measure->report = true;
+				measure->init = false;
 			}
+
 		}
 	}
 	catch ( ... )
