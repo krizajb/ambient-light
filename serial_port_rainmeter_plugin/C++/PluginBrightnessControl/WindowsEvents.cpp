@@ -87,7 +87,7 @@ LRESULT Window::HandleMessage( UINT uMsg, WPARAM wParam, LPARAM lParam )
 	return DefWindowProc( this->WindowHandle(), uMsg, wParam, lParam );
 }
 
-unsigned int WindowsEvents::user_idle_time = 1200000;
+unsigned int WindowsEvents::user_idle_time = 60 * 20 * 1000;	// 20 minutes
 
 WindowsEvents::WindowsEvents()
 {
@@ -171,9 +171,9 @@ void WindowsEvents::Notify( const bool value ) const
 	}
 }
 
-void WindowsEvents::ActivityMain( void ) const
+void WindowsEvents::ActivityMain( void )
 {
-	BOOL screensaver_running = FALSE;
+	BOOL screensaver_enabled = FALSE;
 
 	LASTINPUTINFO last_input;
 	last_input.cbSize = sizeof(last_input);
@@ -181,16 +181,31 @@ void WindowsEvents::ActivityMain( void ) const
 	DWORD idle_time;
 	bool screensaverOn = false;
 
+	if ( !SystemParametersInfo(SPI_GETSCREENSAVEACTIVE, 0, &screensaver_enabled, 0) )
+	{
+		RmLog(LOG_ERROR, L"WinApi load error while retrieving 'SPI_GETSCREENSAVEACTIVE'");
+	}
+	else
+	{
+		if ( !screensaver_enabled )
+		{
+			RmLog(LOG_NOTICE, L"Screensaver not enabled.'");
+			this->exit = true;
+		}
+	}
+
 	//CString report;
 
 	// Main loop to check if user has been idle long enough
-	while ( !exit )
+	while ( !this->exit )
 	{		
-		if ( !SystemParametersInfo( SPI_GETSCREENSAVERRUNNING, 0, &screensaver_running, SPIF_SENDCHANGE )
-		  || !GetLastInputInfo( &last_input )
-			)
+		// There were countless troubles with getting correct SPI_GETSCREENSAVERRUNNING value. 
+		// Using SPI_GETSCREENSAVEACTIVE instead in combination with GetLastInputInfo
+		// See https://github.com/krizajb/ambient_light/blob/0ce15cfaa66220bd365cfb3ebd7b5849969f0ceb
+		// for old version that worked on Windows 8.1 but not Windows 10.
+		if ( !GetLastInputInfo( &last_input ) )
 		{
-			RmLog( LOG_ERROR, L"WinApi load error while retrieving 'SPI_GETSCREENSAVERRUNNING' and 'GetLastInputInfo' info" );
+			RmLog( LOG_ERROR, L"WinApi load error while retrieving 'GetLastInputInfo' info" );
 
 			Sleep( 500 );
 			continue;
@@ -198,15 +213,15 @@ void WindowsEvents::ActivityMain( void ) const
 
 		idle_time = GetTickCount() - last_input.dwTime;
 
-		//report.Format(L"idle time '%d' screensaver_running '%d'", idle_time, screensaver_running );
+		//report.Format(L"idle time '%d'", idle_time );
 		//RmLog( LOG_DEBUG, report );	
 
 		// Change was not detected, notify all interested parties
-		if ( idle_time > this->user_idle_time && TRUE == screensaver_running )
+		if ( idle_time > this->user_idle_time)
 		{
-			RmLog( LOG_DEBUG, L"Inactive" );
 			if ( !screensaverOn )
 			{
+				RmLog(LOG_DEBUG, L"Inactive");
 				// Screensaver is running
 				screensaverOn = true;
 				this->Notify( true );

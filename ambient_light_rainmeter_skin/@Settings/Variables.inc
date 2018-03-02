@@ -1,5 +1,5 @@
 [Variables]
- UserIdle=60000
+ UserIdle=1200000	;20 minutes
  VolumeIncrement=5
  SBWIDTH=264
  BARWIDTH=260

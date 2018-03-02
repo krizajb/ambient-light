@@ -68,7 +68,7 @@ private:
 	void Notify(const bool value) const;
 
 	// Screensaver and user idle detection
-	void ActivityMain( void ) const;
+	void ActivityMain( void );
 
 	// Sleep detection
 	void SleepMain( void );
