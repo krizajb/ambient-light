@@ -173,6 +173,7 @@ void WindowsEvents::Notify( const bool value ) const
 
 void WindowsEvents::ActivityMain( void )
 {
+	BOOL screensaver_running = FALSE;
 	BOOL screensaver_enabled = FALSE;
 
 	LASTINPUTINFO last_input;
@@ -194,48 +195,51 @@ void WindowsEvents::ActivityMain( void )
 		}
 	}
 
-	//CString report;
+	CString report;
+
+	// For screensaver detection to work one has to:
+	// - Enable screensaver (Run "control desk.cpl,,@screensaver")
+	// - Disable display power off (set timer to "Never") or
+	// - Set display power off timer higher then screensaver timer
 
 	// Main loop to check if user has been idle long enough
 	while ( !this->exit )
-	{		
-		// There were countless troubles with getting correct SPI_GETSCREENSAVERRUNNING value. 
-		// Using SPI_GETSCREENSAVEACTIVE instead in combination with GetLastInputInfo
-		// See https://github.com/krizajb/ambient_light/blob/0ce15cfaa66220bd365cfb3ebd7b5849969f0ceb
-		// for old version that worked on Windows 8.1 but not Windows 10.
-		if ( !GetLastInputInfo( &last_input ) )
+	{
+		if (!SystemParametersInfo(SPI_GETSCREENSAVERRUNNING, 0, &screensaver_running, SPIF_SENDCHANGE)
+			|| !GetLastInputInfo(&last_input)
+			)
 		{
-			RmLog( LOG_ERROR, L"WinApi load error while retrieving 'GetLastInputInfo' info" );
+			RmLog(LOG_ERROR, L"WinApi load error while retrieving 'SPI_GETSCREENSAVERRUNNING' and 'GetLastInputInfo' info");
 
-			Sleep( 500 );
+			Sleep(500);
 			continue;
 		}
 
 		idle_time = GetTickCount() - last_input.dwTime;
 
-		//report.Format(L"idle time '%d'", idle_time );
+		//report.Format(L"idle time '%d' screensaver_running '%d'", idle_time, screensaver_running );
 		//RmLog( LOG_DEBUG, report );	
 
-		// Change was not detected, notify all interested parties
-		if ( idle_time > this->user_idle_time)
+		// Change was detected, notify all interested parties
+		if (idle_time > this->user_idle_time && TRUE == screensaver_running)
 		{
-			if ( !screensaverOn )
+			if (!screensaverOn)
 			{
 				RmLog(LOG_DEBUG, L"Inactive");
 				// Screensaver is running
 				screensaverOn = true;
-				this->Notify( true );
+				this->Notify(true);
 			}
 		}
-		else if ( idle_time < this->user_idle_time  && screensaverOn )
+		else if (idle_time < this->user_idle_time  && screensaverOn)
 		{
-			RmLog( LOG_DEBUG, L"Active" );
+			RmLog(LOG_DEBUG, L"Active");
 
 			// Screensaver is not running
 			screensaverOn = false;
-			this->Notify( false );
+			this->Notify(false);
 		}
 
-		Sleep( 500 );
+		Sleep(500);
 	}
 }
