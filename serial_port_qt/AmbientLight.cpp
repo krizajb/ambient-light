@@ -47,7 +47,7 @@ void AmbientLight::Delay(quint32 sec)
 
 QString AmbientLight::Status(bool value)
 {
-    QString status = "Successed";
+    QString status = "Succeeced";
     if (!value) { status = "Failed"; }
 
     return status;
